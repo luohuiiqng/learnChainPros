@@ -60,3 +60,5 @@ build/
 # Lock files you may choose to keep in app repos.
 # Keeping frontend/package-lock.json tracked is usually recommended.
 # package-lock.json
+
+*.pt

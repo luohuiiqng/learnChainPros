@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.schemas import ChatRequest, ChatResponse
+from backend.app.schemas_x import ChatRequest, ChatResponse
 from app.services.chat_service import ensure_session_id, generate_reply
 
 router = APIRouter(tags=["chat"])
