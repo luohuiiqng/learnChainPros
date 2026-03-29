@@ -6,10 +6,18 @@ import MessageList from "./MessageList.vue";
 import { sendChatMessage } from "../services/chatApi";
 import type { ChatMessage } from "../types/chat";
 
+function createMessageId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 // Keep a local in-memory message list for Stage 1 (no persistence yet).
 const messages = ref<ChatMessage[]>([
   {
-    id: crypto.randomUUID(),
+    id: createMessageId(),
     role: "assistant",
     content: "你好，我是你的助手。请告诉我你想做什么。",
     timestamp: new Date().toISOString(),
@@ -24,7 +32,7 @@ const listWrapper = ref<HTMLElement | null>(null);
 // Centralized append function keeps message structure consistent.
 function appendMessage(role: ChatMessage["role"], content: string, timestamp = new Date().toISOString()) {
   messages.value.push({
-    id: crypto.randomUUID(),
+    id: createMessageId(),
     role,
     content,
     timestamp,
@@ -154,5 +162,4 @@ async function handleSend(text: string) {
   }
 }
 </style>
-
 

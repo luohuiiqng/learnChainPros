@@ -23,7 +23,7 @@ class  BaseAgent(ABC):
         """
         return input_data is not None and bool(input_data.message.strip())
     
-    def plan(self,input_data:Any)->AgentOutput:
+    def plan(self,input_data:Any)->Any:
         """
         如果我们的agent需要先规划再执行，则实现该接口，简单agent返回空即可。
         """

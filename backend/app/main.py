@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,6 +66,6 @@ async def unhandled_exception_handler(_: Request, __: Exception) -> JSONResponse
     )
 
 
-app.include_router(chat_router, prefix="/api")
+app.include_router(chat_router, prefix="/agent_api")
 
 

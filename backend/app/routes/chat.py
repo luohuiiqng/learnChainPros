@@ -2,8 +2,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from backend.app.schemas_x import ChatRequest, ChatResponse
-from app.services.chat_service import ensure_session_id, generate_reply
+from app.schemas.chat_input_output import ChatRequest, ChatResponse
+from app.services.chat_service import ensure_session_id, request_chat_agent
+
+
 
 router = APIRouter(tags=["chat"])
 
@@ -12,7 +14,7 @@ router = APIRouter(tags=["chat"])
 def chat(payload: ChatRequest) -> ChatResponse:
     # Strip once and reuse to keep backend/frontend validation behavior aligned.
     message = payload.message.strip()
-
+    
     if not message:
         raise HTTPException(
             status_code=400,
@@ -24,9 +26,15 @@ def chat(payload: ChatRequest) -> ChatResponse:
             status_code=400,
             detail={"error": {"code": "BAD_REQUEST", "message": "message长度不能超过2000"}},
         )
-
+    agent_output = request_chat_agent(message)
+    if not agent_output.success:
+        return ChatResponse(
+        reply=agent_output.error_message,
+        session_id=ensure_session_id(payload.session_id),
+        timestamp=datetime.now(timezone.utc),
+    )
     return ChatResponse(
-        reply=generate_reply(message),
+        reply=agent_output.content,
         session_id=ensure_session_id(payload.session_id),
         timestamp=datetime.now(timezone.utc),
     )

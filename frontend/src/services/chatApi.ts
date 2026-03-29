@@ -1,9 +1,9 @@
 import type { ChatRequest, ChatResponse, ErrorResponse } from "../types/chat";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "";
 
 export async function sendChatMessage(payload: ChatRequest): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/chat`, {
+  const response = await fetch(`${API_BASE_URL}/agent_api/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

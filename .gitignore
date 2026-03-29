@@ -62,3 +62,4 @@ build/
 # package-lock.json
 
 *.pt
+learnchainpros-backend*.tar
