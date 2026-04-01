@@ -3,11 +3,11 @@ from typing import Any
 
 
 class InMemoryMemory(BaseMemory):
-    def __init__(self,**kwargs:Any):
+    def __init__(self,**kwargs:Any)->None:
         super().__init__(**kwargs)
         self._messages:dict[str,list[dict[str,Any]]] = {}
 
-    def add_message(self, session_id:str, message:dict[str,Any]):
+    def add_message(self, session_id:str, message:dict[str,Any])->None:
         if session_id not in self._messages:
             self._messages[session_id] = []
         self._messages[session_id].append(message)

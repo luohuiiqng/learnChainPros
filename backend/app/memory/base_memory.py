@@ -23,5 +23,5 @@ class BaseMemory(ABC):
         messages = self.get_messages(session_id=session_id)
         return messages[-limit:]
 
-    def has_memory(self,session_id:str):
+    def has_memory(self,session_id:str)->bool:
         return bool(self.get_messages(session_id=session_id))

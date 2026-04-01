@@ -1,11 +1,14 @@
 # LearnChainPros
 
-本项目当前已经完成一个可运行的最小 Agent 聊天闭环，具备以下能力：
+本项目当前已经完成一个可运行的最小 Agent 原型，具备以下能力：
 
 - Vue3 前端聊天界面
 - FastAPI 后端聊天接口
 - 自研 Agent 框架最小骨架
 - `MockModel` 与真实 `OpenAIModel` 接入
+- 规则版 `ToolRouter` + `ToolRegistry` + `TimeTool`
+- `BaseMemory` 与 `InMemoryMemory` 短期记忆实现
+- 模型分支可读取最近历史消息参与上下文构建
 - 前后端一问一回联调
 - Docker 化后端部署
 - Nginx 部署前端并代理后端接口
@@ -17,8 +20,11 @@
 ```text
 AgentInput
   -> ChatAgent
-  -> OpenAIModel / MockModel
-  -> ModelResponse
+  -> 写入 user memory
+  -> ToolRouter 判断
+     -> 命中工具：ToolRegistry -> Tool
+     -> 未命中：Memory history -> OpenAIModel / MockModel
+  -> 写入 assistant memory
   -> AgentOutput
 ```
 
@@ -78,8 +84,10 @@ AgentInput
 
 - 定义 Agent 抽象
 - 定义 Model 抽象
+- 定义 Tool 抽象、工具注册与规则路由
+- 定义 Memory 抽象与会话记忆实现
 - 定义统一输入输出协议
-- 执行最小 Agent 推理链路
+- 执行带规则工具调用与短期记忆的 Agent 推理链路
 
 核心文件：
 
@@ -88,11 +96,19 @@ AgentInput
 - `backend/app/models/base_model.py`
 - `backend/app/models/mock_model.py`
 - `backend/app/models/openai_model.py`
+- `backend/app/tools/base_tool.py`
+- `backend/app/tools/time_tool.py`
+- `backend/app/tools/tool_registry.py`
+- `backend/app/tools/tool_router.py`
+- `backend/app/memory/base_memory.py`
+- `backend/app/memory/in_memory_memory.py`
 - `backend/app/schemas/agent_input.py`
 - `backend/app/schemas/agent_output.py`
 - `backend/app/schemas/agent_context.py`
 - `backend/app/schemas/model_request.py`
 - `backend/app/schemas/model_response.py`
+- `backend/app/schemas/tool_input.py`
+- `backend/app/schemas/tool_output.py`
 
 ## 当前端到端调用关系
 
@@ -106,8 +122,11 @@ AgentInput
   -> services/chat_service.py
   -> ChatAgent.run()
   -> ChatAgent.act()
-  -> OpenAIModel.generate() / MockModel.generate()
-  -> ModelResponse
+  -> 写入 user memory
+  -> ToolRouter.route()
+     -> 命中工具：ToolRegistry.get_tool() -> Tool.run()
+     -> 未命中：ChatAgent 构建 history prompt -> OpenAIModel.generate() / MockModel.generate()
+  -> 写入 assistant memory
   -> AgentOutput
   -> ChatResponse
   -> 前端渲染消息
@@ -135,9 +154,11 @@ AgentInput
 
 职责：
 
-- 作为 Agent 层和 Model 层之间的桥
+- 作为 Agent、Model、Tool、Memory 之间的编排层
+- 根据规则决定走工具分支还是模型分支
 - 将 `AgentInput` 转成 `ModelRequest`
-- 将 `ModelResponse` 转成 `AgentOutput`
+- 将 `ToolOutput` / `ModelResponse` 转成 `AgentOutput`
+- 在会话维度写入 user / assistant 消息到 Memory
 
 ### `OpenAIModel / MockModel`
 
@@ -145,6 +166,22 @@ AgentInput
 
 - 作为 `BaseModel` 的具体实现
 - 负责真正执行模型调用或模拟模型调用
+
+### `ToolRegistry / ToolRouter / TimeTool`
+
+职责：
+
+- `ToolRegistry` 负责工具注册与查询
+- `ToolRouter` 负责基于规则选择工具
+- `TimeTool` 作为第一个真实接入 Agent 主流程的工具
+
+### `BaseMemory / InMemoryMemory`
+
+职责：
+
+- 定义短期记忆抽象接口
+- 按 `session_id` 保存多轮消息
+- 为模型分支提供最近历史消息
 
 ### `routes/chat.py`
 
@@ -555,15 +592,18 @@ proxy_pass http://127.0.0.1:18000;
 
 - 本地前后端一问一回
 - 真实模型调用验证
+- 规则版工具调用链路
+- 短期会话记忆写入与读取
+- 历史消息拼接进模型 prompt 的最小多轮上下文能力
 - Docker 化后端部署验证
 - Nginx 静态前端 + 反向代理后端验证
 
 ## 下一步建议
 
-- 增加 Tool 抽象与工具调用
-- 增加 Memory 抽象
-- 进一步优化错误处理和会话管理
-- 补充更完整的自动化测试与部署流程
+- 补充更多断言型测试，减少仅靠 `print` 验证
+- 优化 Memory 读取策略，例如最近 N 轮裁剪与后续摘要机制
+- 从规则版 ToolRouter 逐步演进到更灵活的工具决策机制
+- 进一步优化错误处理、会话管理与可观测性
 
 ## 上线检查清单
 
