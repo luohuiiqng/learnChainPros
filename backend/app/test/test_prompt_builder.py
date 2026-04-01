@@ -1,7 +1,7 @@
-from app.prompts.base_prompt import BasePrompt
+from app.prompts.prompt_builder import PromptBuilder
 
 
-builder = BasePrompt()
+builder = PromptBuilder()
 
 empty_prompt = builder.build_prompt(messages=[], current_input="你好")
 assert "用户的输入是" in empty_prompt

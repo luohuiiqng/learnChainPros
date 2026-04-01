@@ -6,6 +6,7 @@ from app.schemas.agent_output import AgentOutput
 from app.tools.time_tool import TimeTool
 from app.tools.tool_registry import ToolRegistry
 from app.tools.tool_router import ToolRouter
+from app.prompts.prompt_builder import PromptBuilder
 
 model = MockModel(model_name="mock-memory-model", response_text="mock response")
 session_id = "test_session_1"
@@ -16,7 +17,8 @@ tool_router = ToolRouter()
 tool_router.add_rule(tool_name = "time_tool",keywords=["时间","现在时间","当前时间","日期","time now","time","几点","现在几点"])
 tool_router.add_rule(tool_name = "test_not_exist_tool",keywords=["lala"])
 memory = InMemoryMemory()
-chat_agent = ChatAgent(model = model,tool_registry=tool_registry,tool_router=tool_router,memory=memory)
+prompt_builder = PromptBuilder()
+chat_agent = ChatAgent(model = model,tool_registry=tool_registry,tool_router=tool_router,memory=memory,base_prompt=prompt_builder)
 
 agent_input_1 = AgentInput(message="你好，请记住我叫王老五!",session_id=session_id)
 agent_output_1 = chat_agent.run(agent_input_1)

@@ -10,16 +10,17 @@ from app.schemas.tool_output import ToolOutput
 from app.tools.tool_router import ToolRouter
 from app.memory.base_memory import BaseMemory
 from datetime import datetime
+from app.prompts.prompt_builder import PromptBuilder
 from app.prompts.base_prompt import BasePrompt
 
 
 class ChatAgent(BaseAgent):
-    def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,tool_router:ToolRouter=None,memory:BaseMemory|None=None,**kwargs)->None:
+    def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,tool_router:ToolRouter=None,memory:BaseMemory|None=None,prompt_builder:BasePrompt|None=None,**kwargs)->None:
         super().__init__(model = model,**kwargs)
         self._tool_registry = tool_registry
         self._tool_router = tool_router
         self._memory = memory
-        self._base_prompt = BasePrompt()
+        self._prompt_builder = prompt_builder if prompt_builder is not None else PromptBuilder()
 
     def call_tool(self,tool_name:str,tool_input:ToolInput)->ToolOutput:
         if self._tool_registry is None:
@@ -43,11 +44,11 @@ class ChatAgent(BaseAgent):
                             metadata=tool_output.metadata
                             )
         if self._memory is not None and input_data.session_id is not None:
-            build_prompt = self._base_prompt.build_prompt(messages=self._memory.get_messages(input_data.session_id))
-            model_request = ModelRequest(prompt = build_prompt)
+            prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
+            model_request = ModelRequest(prompt = prompt_text)
         else:
-            build_prompt = self._base_prompt.build_prompt(messages=[], current_input=input_data.message)
-            model_request = ModelRequest(prompt = build_prompt)
+            prompt_text = self._prompt_builder.build_prompt(messages=[], current_input=input_data.message)
+            model_request = ModelRequest(prompt = prompt_text)
         model_response = self._model.generate(model_request)
         if self._memory is not None and input_data.session_id is not None:
             self._memory.add_message(input_data.session_id,{"role":"assistant","content":model_response.content or "","timestamp": datetime.now().isoformat()})
