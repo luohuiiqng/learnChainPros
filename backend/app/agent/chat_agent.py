@@ -7,7 +7,6 @@ from app.tools.tool_registry import ToolRegistry
 from app.models.base_model import BaseModel
 from app.schemas.tool_input import ToolInput
 from app.schemas.tool_output import ToolOutput
-from app.tools.tool_router import ToolRouter
 from app.memory.base_memory import BaseMemory
 from datetime import datetime
 from app.prompts.prompt_builder import PromptBuilder
@@ -68,6 +67,8 @@ class ChatAgent(BaseAgent):
                                     error_message=tool_output.error_message,
                                     metadata=tool_output.metadata
                                     )
+                    else:
+                        return self.call_model(input_data)
                 else:
                     return self.call_model(input_data)
             else:

@@ -8,9 +8,6 @@ class RulePlanner(BasePlanner):
     def __init__(self,tool_router:ToolRouter=None,**kwargs)->None:
         super().__init__(**kwargs)
         self._tool_router = tool_router
-        self._rules = [
-            {"tool_name":"time_tool", "keywords": ["时间", "现在时间", "当前时间", "几点", "现在几点"]}
-            ]
 
     def plan(self,input_data:Any,context:Any=None)->dict[str,Any]:
         """根据输入内容生成最小规则计划结果。"""
