@@ -12,15 +12,17 @@ from app.memory.base_memory import BaseMemory
 from datetime import datetime
 from app.prompts.prompt_builder import PromptBuilder
 from app.prompts.base_prompt import BasePrompt
-
+from app.planners.base_planner import BasePlanner
 
 class ChatAgent(BaseAgent):
-    def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,tool_router:ToolRouter=None,memory:BaseMemory|None=None,prompt_builder:BasePrompt|None=None,**kwargs)->None:
+    def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,tool_router:ToolRouter=None,
+                 memory:BaseMemory|None=None,prompt_builder:BasePrompt|None=None,
+                 planner:BasePlanner|None=None,**kwargs)->None:
         super().__init__(model = model,**kwargs)
         self._tool_registry = tool_registry
-        self._tool_router = tool_router
         self._memory = memory
         self._prompt_builder = prompt_builder if prompt_builder is not None else PromptBuilder()
+        self._planner = planner
 
     def call_tool(self,tool_name:str,tool_input:ToolInput)->ToolOutput:
         if self._tool_registry is None:
@@ -32,29 +34,52 @@ class ChatAgent(BaseAgent):
     def act(self,input_data:AgentInput,plan:Any = None)->AgentOutput:
         if self._memory is not None and input_data.session_id is not None:
             self._memory.add_message(input_data.session_id,{"role":"user","content":input_data.message,"timestamp": datetime.now().isoformat()})
-        if self._tool_router is not None:
-            tool_name = self._tool_router.route(input_data.message)
-            if tool_name is not None:
-                tool_output = self.call_tool(tool_name,ToolInput(params={}))
-                if self._memory is not None and input_data.session_id is not None:
-                    self._memory.add_message(input_data.session_id,{"role":"assistant","content":tool_output.content or "","timestamp": datetime.now().isoformat()})
-                return AgentOutput(content = tool_output.content or "",
-                            success=tool_output.success,
-                            error_message=tool_output.error_message,
-                            metadata=tool_output.metadata
-                            )
-        if self._memory is not None and input_data.session_id is not None:
-            prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
-            model_request = ModelRequest(prompt = prompt_text)
-        else:
-            prompt_text = self._prompt_builder.build_prompt(messages=[], current_input=input_data.message)
-            model_request = ModelRequest(prompt = prompt_text)
-        model_response = self._model.generate(model_request)
-        if self._memory is not None and input_data.session_id is not None:
-            self._memory.add_message(input_data.session_id,{"role":"assistant","content":model_response.content or "","timestamp": datetime.now().isoformat()})
-        return AgentOutput(content = model_response.content or "",
+        
+        if self._planner is not None:
+            plan = self._planner.plan(input_data)
+            if plan is not None:
+                if plan.get("action")=="tool":
+                    tool_name = plan.get("tool_name")
+                    if tool_name is not None:
+                        tool_output = self.call_tool(tool_name,ToolInput(params={}))
+                        if self._memory is not None and input_data.session_id is not None:
+                            self._memory.add_message(input_data.session_id,{"role":"assistant","content":tool_output.content or "","timestamp": datetime.now().isoformat()})
+                        return AgentOutput(content = tool_output.content or "",
+                                    success=tool_output.success,
+                                    error_message=tool_output.error_message,
+                                    metadata=tool_output.metadata
+                                    )
+                else:
+                    if self._memory is not None and input_data.session_id is not None:
+                        prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
+                        model_request = ModelRequest(prompt = prompt_text)
+                    else:
+                        prompt_text = self._prompt_builder.build_prompt(messages=[], current_input=input_data.message)
+                        model_request = ModelRequest(prompt = prompt_text)
+                    model_response = self._model.generate(model_request)
+                    if self._memory is not None and input_data.session_id is not None:
+                        self._memory.add_message(input_data.session_id,{"role":"assistant","content":model_response.content or "","timestamp": datetime.now().isoformat()})
+                    return AgentOutput(content = model_response.content or "",
                            success=model_response.success,
                            error_message=model_response.error_message,
                            metadata=model_response.metadata
-                           ) 
+                           )
+                    
+        else:
+            # 没有规划器，直接调用模型
+            if self._memory is not None and input_data.session_id is not None:
+                prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
+                model_request = ModelRequest(prompt = prompt_text)
+            else:
+                prompt_text = self._prompt_builder.build_prompt(messages=[], current_input=input_data.message)
+                model_request = ModelRequest(prompt = prompt_text)
+            model_response = self._model.generate(model_request)
+            if self._memory is not None and input_data.session_id is not None:
+                self._memory.add_message(input_data.session_id,{"role":"assistant","content":model_response.content or "","timestamp": datetime.now().isoformat()})
+            return AgentOutput(content = model_response.content or "",
+                           success=model_response.success,
+                           error_message=model_response.error_message,
+                           metadata=model_response.metadata
+                           )
+        
         
