@@ -9,6 +9,9 @@
 - 规则版 `ToolRouter` + `ToolRegistry` + `TimeTool`
 - `BaseMemory` 与 `InMemoryMemory` 短期记忆实现
 - 模型分支可读取最近历史消息参与上下文构建
+- `BasePlanner` 与 `RulePlanner` 规则规划能力
+- `BaseWorkflow`、`SequentialWorkflow` 与 `AgentExecutor` 最小工作流执行能力
+- Workflow 支持步骤结果传递，后一步可消费前一步输出
 - 前后端一问一回联调
 - Docker 化后端部署
 - Nginx 部署前端并代理后端接口
@@ -21,9 +24,12 @@
 AgentInput
   -> ChatAgent
   -> 写入 user memory
-  -> ToolRouter 判断
-     -> 命中工具：ToolRegistry -> Tool
-     -> 未命中：Memory history -> OpenAIModel / MockModel
+  -> RulePlanner
+     -> ToolRouter 匹配工具
+     -> 生成 tool / model plan
+  -> ChatAgent 执行计划
+     -> tool plan：ToolRegistry -> Tool
+     -> model plan：Memory history -> PromptBuilder -> OpenAIModel / MockModel
   -> 写入 assistant memory
   -> AgentOutput
 ```
@@ -84,10 +90,13 @@ AgentInput
 
 - 定义 Agent 抽象
 - 定义 Model 抽象
+- 定义 Prompt 抽象与默认 Prompt 构建实现
 - 定义 Tool 抽象、工具注册与规则路由
 - 定义 Memory 抽象与会话记忆实现
+- 定义 Planner 抽象与规则规划实现
+- 定义 Workflow / Executor 抽象与最小顺序执行能力
 - 定义统一输入输出协议
-- 执行带规则工具调用与短期记忆的 Agent 推理链路
+- 执行带规则规划、工具调用、短期记忆与最小工作流的 Agent 推理链路
 
 核心文件：
 
@@ -102,6 +111,14 @@ AgentInput
 - `backend/app/tools/tool_router.py`
 - `backend/app/memory/base_memory.py`
 - `backend/app/memory/in_memory_memory.py`
+- `backend/app/planners/base_planner.py`
+- `backend/app/planners/rule_planner.py`
+- `backend/app/prompts/base_prompt.py`
+- `backend/app/prompts/prompt_builder.py`
+- `backend/app/workflows/base_workflow.py`
+- `backend/app/workflows/sequential_workflow.py`
+- `backend/app/workflows/base_executor.py`
+- `backend/app/workflows/agent_executor.py`
 - `backend/app/schemas/agent_input.py`
 - `backend/app/schemas/agent_output.py`
 - `backend/app/schemas/agent_context.py`
@@ -123,9 +140,12 @@ AgentInput
   -> ChatAgent.run()
   -> ChatAgent.act()
   -> 写入 user memory
-  -> ToolRouter.route()
+  -> RulePlanner.plan()
+     -> ToolRouter.route()
+     -> 生成 tool / model plan
+  -> ChatAgent 执行计划
      -> 命中工具：ToolRegistry.get_tool() -> Tool.run()
-     -> 未命中：ChatAgent 构建 history prompt -> OpenAIModel.generate() / MockModel.generate()
+     -> 未命中：PromptBuilder.build_prompt() -> OpenAIModel.generate() / MockModel.generate()
   -> 写入 assistant memory
   -> AgentOutput
   -> ChatResponse
@@ -154,11 +174,18 @@ AgentInput
 
 职责：
 
-- 作为 Agent、Model、Tool、Memory 之间的编排层
-- 根据规则决定走工具分支还是模型分支
+- 作为 Agent、Model、Tool、Memory、Planner 之间的编排层
+- 根据 Planner 产出的计划决定走工具分支还是模型分支
 - 将 `AgentInput` 转成 `ModelRequest`
 - 将 `ToolOutput` / `ModelResponse` 转成 `AgentOutput`
 - 在会话维度写入 user / assistant 消息到 Memory
+
+### `BasePrompt / PromptBuilder`
+
+职责：
+
+- `BasePrompt` 定义 Prompt 抽象接口
+- `PromptBuilder` 负责把历史消息和当前输入组织成模型可用的 prompt
 
 ### `OpenAIModel / MockModel`
 
@@ -172,7 +199,7 @@ AgentInput
 职责：
 
 - `ToolRegistry` 负责工具注册与查询
-- `ToolRouter` 负责基于规则选择工具
+- `ToolRouter` 负责将自然语言输入匹配成工具名
 - `TimeTool` 作为第一个真实接入 Agent 主流程的工具
 
 ### `BaseMemory / InMemoryMemory`
@@ -182,6 +209,26 @@ AgentInput
 - 定义短期记忆抽象接口
 - 按 `session_id` 保存多轮消息
 - 为模型分支提供最近历史消息
+
+### `BasePlanner / RulePlanner`
+
+职责：
+
+- `BasePlanner` 定义规划层抽象接口
+- `RulePlanner` 基于 `ToolRouter` 结果生成最小执行计划
+- 当前最小计划结果支持：
+  - `{"action": "tool", "tool_name": "..."}`
+  - `{"action": "model"}`
+
+### `BaseWorkflow / SequentialWorkflow / AgentExecutor`
+
+职责：
+
+- `BaseWorkflow` 定义工作流抽象接口
+- `SequentialWorkflow` 负责顺序执行多个步骤并汇总结果
+- `BaseExecutor` 定义步骤执行抽象接口
+- `AgentExecutor` 负责执行 `tool` / `model` 两类 step
+- 当前 workflow 已支持通过 `context["step_results"]` 在步骤之间传递结果
 
 ### `routes/chat.py`
 
@@ -202,6 +249,19 @@ AgentInput
 ```text
 POST /agent_api/chat
 ```
+
+## 当前已验证的能力
+
+当前项目已经通过脚本测试验证了以下关键链路：
+
+1. `ToolRouter -> RulePlanner -> ChatAgent`
+   职责：验证工具分支与模型分支都能由 Planner 正常决策并执行。
+2. `Memory + PromptBuilder + ChatAgent`
+   职责：验证会话历史可被读取并参与模型输入构建。
+3. `SequentialWorkflow + AgentExecutor`
+   职责：验证顺序执行、失败中断与步骤结果收集。
+4. `SequentialWorkflow` 的步骤结果传递
+   职责：验证后一步模型 step 可读取前一步工具 step 的输出。
 
 ## 目录结构
 

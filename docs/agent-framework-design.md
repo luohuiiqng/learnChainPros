@@ -330,11 +330,11 @@
 
 结合现状，下一批最值得实现的小目标如下：
 
-1. 修正并完善 `BaseAgent` 抽象基类。
-2. 新建 `BaseModel` 抽象基类。
-3. 定义基础消息类型与执行结果类型。
-4. 设计 `AgentInput`、`AgentOutput`、`AgentContext` 数据结构。
-5. 设计一个最小可运行示例 Agent。
+1. 继续清理 `ChatAgent`、`Planner`、`Workflow` 之间的职责边界。
+2. 将 `Workflow` 与 `Executor` 更自然地接入更高层的 Agent 主流程。
+3. 为工作流步骤执行、步骤结果传递补更稳的断言型测试。
+4. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
+5. 为后续 `Runtime`、`Observability` 和多 Agent 协作继续预留接口。
 
 ## 8. 当前阶段状态
 
@@ -345,17 +345,21 @@
 3. `BaseTool`、`ToolRegistry`、`ToolRouter` 与 `TimeTool` 已落地，规则版工具调用链路已跑通。
 4. `BaseMemory` 与 `InMemoryMemory` 已落地，短期会话记忆已经接入 `ChatAgent` 主流程。
 5. 普通聊天分支已经可以读取最近历史消息并拼接进模型输入，形成最小多轮上下文能力。
+6. `BasePlanner` 与 `RulePlanner` 已落地，`ToolRouter -> RulePlanner -> ChatAgent` 的最小规划执行链路已跑通。
+7. `BaseWorkflow`、`SequentialWorkflow`、`BaseExecutor` 与 `AgentExecutor` 已落地，最小工作流执行链路已跑通。
+8. Workflow 已支持最小的步骤结果传递能力，后一步可消费前一步输出。
 
 当前阶段应统一定义为：
 
-`阶段 3 与阶段 4 的过渡阶段：规则版工具调用 + 短期记忆能力已成立`
+`阶段 5 与阶段 6 的过渡阶段：规则规划、最小工作流与执行层已成立`
 
-这一阶段的核心目标不再是“只有单 Agent 最小闭环”，而是把 Agent 内核的两块关键增强能力真正接回主流程，重点包括：
+这一阶段的核心目标不再只是“工具调用 + 短期记忆”，而是把规划层、工作流层和执行层真正接回主流程，重点包括：
 
-1. 规则版工具调用能力稳定化。
-2. 短期记忆的读写策略稳定化。
-3. Tool、Memory 与 ChatAgent 主流程的边界持续收清。
-4. 为后续 Prompt 管理、Planner 和更强 Tool Calling 打地基。
+1. `Planner` 与 `ToolRouter` 的边界稳定化。
+2. `Workflow` 与 `Executor` 的顺序执行链路稳定化。
+3. 步骤结果传递能力稳定化。
+4. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
+5. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
 
 后续如果没有明确说明，所有实现优先级都应服从这一阶段目标。
 
