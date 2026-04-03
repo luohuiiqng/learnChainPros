@@ -1,11 +1,13 @@
 from app.planners.base_planner import BasePlanner
 from typing import Any
+from app.tools.tool_router import ToolRouter
 
 
 
 class RulePlanner(BasePlanner):
-    def __init__(self,**kwargs)->None:
+    def __init__(self,tool_router:ToolRouter=None,**kwargs)->None:
         super().__init__(**kwargs)
+        self._tool_router = tool_router
         self._rules = [
             {"tool_name":"time_tool", "keywords": ["时间", "现在时间", "当前时间", "几点", "现在几点"]}
             ]
@@ -17,8 +19,8 @@ class RulePlanner(BasePlanner):
                 "action":"model",
                 "reason":"输入数据不合法，无法规划工具调用"
             }
-        message = input_data.message.strip()
-        for rule in self._rules:
-            if any(keyword in message for keyword in rule["keywords"]):
-                return {"action":"tool","tool_name": rule["tool_name"]}
+        tool_name = self._tool_router.route(input_data.message) if self._tool_router else None
+        if tool_name is not None:
+            return {"action":"tool","tool_name": tool_name}
+    
         return {"action": "model"}
