@@ -12,6 +12,7 @@
 - `BasePlanner` 与 `RulePlanner` 规则规划能力
 - `BaseWorkflow`、`SequentialWorkflow` 与 `AgentExecutor` 最小工作流执行能力
 - Workflow 支持步骤结果传递，后一步可消费前一步输出
+- `RuntimeSession` 运行快照能力，可记录单轮输入、规划、调用轨迹与最终输出
 - 前后端一问一回联调
 - Docker 化后端部署
 - Nginx 部署前端并代理后端接口
@@ -30,6 +31,7 @@ AgentInput
   -> ChatAgent 执行计划
      -> tool plan：ToolRegistry -> Tool
      -> model plan：Memory history -> PromptBuilder -> OpenAIModel / MockModel
+  -> RuntimeSession 聚合本轮输入、计划、调用轨迹与最终输出
   -> 写入 assistant memory
   -> AgentOutput
 ```
@@ -94,9 +96,10 @@ AgentInput
 - 定义 Tool 抽象、工具注册与规则路由
 - 定义 Memory 抽象与会话记忆实现
 - 定义 Planner 抽象与规则规划实现
+- 定义 Runtime 最小运行快照对象
 - 定义 Workflow / Executor 抽象与最小顺序执行能力
 - 定义统一输入输出协议
-- 执行带规则规划、工具调用、短期记忆与最小工作流的 Agent 推理链路
+- 执行带规则规划、工具调用、短期记忆、运行快照与最小工作流的 Agent 推理链路
 
 核心文件：
 
@@ -119,6 +122,7 @@ AgentInput
 - `backend/app/workflows/sequential_workflow.py`
 - `backend/app/workflows/base_executor.py`
 - `backend/app/workflows/agent_executor.py`
+- `backend/app/runtime/runtime_session.py`
 - `backend/app/schemas/agent_input.py`
 - `backend/app/schemas/agent_output.py`
 - `backend/app/schemas/agent_context.py`
@@ -146,6 +150,7 @@ AgentInput
   -> ChatAgent 执行计划
      -> 命中工具：ToolRegistry.get_tool() -> Tool.run()
      -> 未命中：PromptBuilder.build_prompt() -> OpenAIModel.generate() / MockModel.generate()
+  -> RuntimeSession 记录 planner_result / tool_calls / model_calls / final_output
   -> 写入 assistant memory
   -> AgentOutput
   -> ChatResponse
@@ -230,6 +235,15 @@ AgentInput
 - `AgentExecutor` 负责执行 `tool` / `model` 两类 step
 - 当前 workflow 已支持通过 `context["step_results"]` 在步骤之间传递结果
 
+### `RuntimeSession`
+
+职责：
+
+- 记录单轮运行的核心快照
+- 聚合 `session_id`、`user_input`、`planner_result`
+- 记录 `tool_calls`、`model_calls`、`final_output` 与 `errors`
+- 作为最小 runtime 观测对象挂入 `AgentOutput.metadata["runtime_session"]`
+
 ### `routes/chat.py`
 
 职责：
@@ -258,6 +272,10 @@ POST /agent_api/chat
    职责：验证工具分支与模型分支都能由 Planner 正常决策并执行。
 2. `Memory + PromptBuilder + ChatAgent`
    职责：验证会话历史可被读取并参与模型输入构建。
+3. `ChatAgent + RuntimeSession`
+   职责：验证工具分支与模型分支都能记录单轮运行快照，并保留原始 metadata。
+4. `SequentialWorkflow + AgentExecutor`
+   职责：验证顺序工作流执行、步骤结果传递与最小执行层联动。
 3. `SequentialWorkflow + AgentExecutor`
    职责：验证顺序执行、失败中断与步骤结果收集。
 4. `SequentialWorkflow` 的步骤结果传递

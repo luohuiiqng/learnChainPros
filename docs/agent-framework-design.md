@@ -333,8 +333,9 @@
 1. 继续清理 `ChatAgent`、`Planner`、`Workflow` 之间的职责边界。
 2. 将 `Workflow` 与 `Executor` 更自然地接入更高层的 Agent 主流程。
 3. 为工作流步骤执行、步骤结果传递补更稳的断言型测试。
-4. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
-5. 为后续 `Runtime`、`Observability` 和多 Agent 协作继续预留接口。
+4. 引入最小 `RuntimeSession`，作为单轮运行快照对象记录输入、规划、调用轨迹与最终输出。
+5. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
+6. 为后续 `Runtime`、`Observability` 和多 Agent 协作继续预留接口。
 
 ## 8. 当前阶段状态
 
@@ -348,18 +349,20 @@
 6. `BasePlanner` 与 `RulePlanner` 已落地，`ToolRouter -> RulePlanner -> ChatAgent` 的最小规划执行链路已跑通。
 7. `BaseWorkflow`、`SequentialWorkflow`、`BaseExecutor` 与 `AgentExecutor` 已落地，最小工作流执行链路已跑通。
 8. Workflow 已支持最小的步骤结果传递能力，后一步可消费前一步输出。
+9. `RuntimeSession` 已落地，并以最小方式接入 `ChatAgent`，可记录单轮输入、规划结果、工具/模型调用、最终输出与错误摘要。
 
 当前阶段应统一定义为：
 
-`阶段 5 与阶段 6 的过渡阶段：规则规划、最小工作流与执行层已成立`
+`阶段 5 与阶段 6 的过渡阶段：规则规划、最小工作流、执行层与最小运行快照已成立`
 
 这一阶段的核心目标不再只是“工具调用 + 短期记忆”，而是把规划层、工作流层和执行层真正接回主流程，重点包括：
 
 1. `Planner` 与 `ToolRouter` 的边界稳定化。
 2. `Workflow` 与 `Executor` 的顺序执行链路稳定化。
 3. 步骤结果传递能力稳定化。
-4. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
-5. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+4. `RuntimeSession` 作为最小 runtime 观测对象稳定接入主链。
+5. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
+6. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
 
 后续如果没有明确说明，所有实现优先级都应服从这一阶段目标。
 
