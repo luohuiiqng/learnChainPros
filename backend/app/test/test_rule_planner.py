@@ -11,6 +11,19 @@ tool_router.add_rule(
 
 planner = RulePlanner(tool_router=tool_router)
 
+workflow_plan = planner.plan(
+    AgentInput(message="现在几点了，回复我一句", session_id="planner-session")
+)
+assert workflow_plan["action"] == "workflow"
+assert len(workflow_plan["steps"]) == 2
+assert workflow_plan["steps"][0]["step_name"] == "get_time"
+assert workflow_plan["steps"][0]["action"] == "tool"
+assert workflow_plan["steps"][0]["tool_name"] == "time_tool"
+assert workflow_plan["steps"][1]["step_name"] == "generate_reply"
+assert workflow_plan["steps"][1]["action"] == "model"
+assert workflow_plan["steps"][1]["use_step_result"] == "get_time"
+assert workflow_plan["context"] == {}
+
 tool_plan = planner.plan(AgentInput(message="现在几点了？", session_id="planner-session"))
 assert tool_plan["action"] == "tool"
 assert tool_plan["tool_name"] == "time_tool"

@@ -13,6 +13,8 @@ from app.prompts.prompt_builder import PromptBuilder
 from app.prompts.base_prompt import BasePrompt
 from app.planners.base_planner import BasePlanner
 from app.runtime.runtime_session import RuntimeSession
+from app.workflows.sequential_workflow import SequentialWorkflow
+from app.workflows.agent_executor import AgentExecutor
 
 class ChatAgent(BaseAgent):
     def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,
@@ -33,6 +35,80 @@ class ChatAgent(BaseAgent):
         merged_metadata["runtime_session"] = runtime_session
         return merged_metadata
 
+    def _add_memory_message(
+        self,
+        session_id: str | None,
+        role: str,
+        content: str,
+    ) -> None:
+        if self._memory is None or session_id is None:
+            return
+        self._memory.add_message(
+            session_id,
+            {
+                "role": role,
+                "content": content,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
+
+    def _finalize_model_output(
+        self,
+        model_output: AgentOutput,
+        prompt_text: str | None,
+        runtime_session: RuntimeSession,
+    ) -> AgentOutput:
+        runtime_session.add_model_call(
+            prompt=prompt_text or "",
+            success=model_output.success,
+            output=model_output.content,
+            error=model_output.error_message,
+        )
+        if not model_output.success:
+            runtime_session.add_error(
+                f"model call error: {model_output.error_message}"
+            )
+        runtime_session.final_output = model_output.content or ""
+        model_output.metadata = self._build_output_metadata(
+            model_output.metadata,
+            runtime_session,
+        )
+        return model_output
+
+    def _run_workflow(
+        self,
+        plan: dict[str, Any],
+        runtime_session: RuntimeSession,
+    ) -> AgentOutput:
+        sequential_workflow = SequentialWorkflow()
+        agent_executor = AgentExecutor(
+            model=self._model,
+            tool_registry=self._tool_registry,
+        )
+        workflow_output = sequential_workflow.run(
+            steps=plan.get("steps", []),
+            executor=agent_executor,
+            context=plan.get("context", {}),
+        )
+        runtime_session.workflow_result = workflow_output
+        results = workflow_output.get("results", [])
+        final_result = results[-1] if results else {}
+        runtime_session.final_output = final_result.get("output", "")
+        if not workflow_output.get("success", False):
+            runtime_session.add_error(workflow_output.get("error", ""))
+        if not final_result.get("success", False):
+            runtime_session.add_error(final_result.get("error", ""))
+        return AgentOutput(
+            content=runtime_session.final_output,
+            success=workflow_output.get("success", False),
+            error_message=workflow_output.get("error", "")
+            or final_result.get("error", ""),
+            metadata=self._build_output_metadata(
+                workflow_output.get("metadata", {}),
+                runtime_session,
+            ),
+        )
+
     def call_tool(self,tool_name:str,tool_input:ToolInput)->ToolOutput:
         if self._tool_registry is None:
             return ToolOutput(content= None,error_message="tool registry is not configured",success=False)
@@ -46,7 +122,11 @@ class ChatAgent(BaseAgent):
             prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
             model_request = ModelRequest(prompt = prompt_text)
             model_response = self._model.generate(model_request)
-            self._memory.add_message(input_data.session_id,{"role":"assistant","content":model_response.content or "","timestamp": datetime.now().isoformat()})
+            self._add_memory_message(
+                input_data.session_id,
+                "assistant",
+                model_response.content or "",
+            )
             return AgentOutput(
                 content=model_response.content or "",
                 success=model_response.success,
@@ -68,8 +148,11 @@ class ChatAgent(BaseAgent):
         runtime_session = RuntimeSession(
             session_id=input_data.session_id, user_input=input_data.message
         )
-        if self._memory is not None and input_data.session_id is not None:
-            self._memory.add_message(input_data.session_id,{"role":"user","content":input_data.message,"timestamp": datetime.now().isoformat()})        
+        self._add_memory_message(
+            input_data.session_id,
+            "user",
+            input_data.message,
+        )
         if self._planner is not None:
             plan = self._planner.plan(input_data)
             runtime_session.planner_result = plan
@@ -84,8 +167,11 @@ class ChatAgent(BaseAgent):
                             output=tool_output.content,
                             error=tool_output.error_message,
                         )
-                        if self._memory is not None and input_data.session_id is not None:
-                            self._memory.add_message(input_data.session_id,{"role":"assistant","content":tool_output.content or "","timestamp": datetime.now().isoformat()})
+                        self._add_memory_message(
+                            input_data.session_id,
+                            "assistant",
+                            tool_output.content or "",
+                        )
                         runtime_session.final_output = tool_output.content or ""
                         if not tool_output.success:
                             runtime_session.add_error(
@@ -102,74 +188,34 @@ class ChatAgent(BaseAgent):
                         )
                     else:
                         model_output, prompt_text = self.call_model(input_data)
-                        runtime_session.add_model_call(
-                            prompt=prompt_text or "",
-                            success=model_output.success,
-                            output=model_output.content,
-                            error=model_output.error_message,
-                        )
-                        if not model_output.success:
-                            runtime_session.add_error(
-                                f"model call error: {model_output.error_message}"
-                            )
-                        runtime_session.final_output = model_output.content or ""
-                        model_output.metadata = self._build_output_metadata(
-                            model_output.metadata,
+                        return self._finalize_model_output(
+                            model_output,
+                            prompt_text,
                             runtime_session,
                         )
-                        return model_output
-                else:
-                    model_output, prompt_text = self.call_model(input_data)
-                    runtime_session.add_model_call(
-                        prompt=prompt_text or "",
-                        success=model_output.success,
-                        output=model_output.content,
-                        error=model_output.error_message,
-                    )
-                    if not model_output.success:
-                        runtime_session.add_error(
-                            f"model call error: {model_output.error_message}"
-                        )
-                    runtime_session.final_output = model_output.content or ""
-                    model_output.metadata = self._build_output_metadata(
-                        model_output.metadata,
+                elif plan.get("action") == "workflow":
+                    return self._run_workflow(
+                        plan,
                         runtime_session,
                     )
-                    return model_output
+                else:
+                    model_output, prompt_text = self.call_model(input_data)
+                    return self._finalize_model_output(
+                        model_output,
+                        prompt_text,
+                        runtime_session,
+                    )
             else:
                 model_output, prompt_text = self.call_model(input_data)
-                runtime_session.add_model_call(
-                    prompt=prompt_text or "",
-                    success=model_output.success,
-                    output=model_output.content,
-                    error=model_output.error_message,
-                )
-                if not model_output.success:
-                    runtime_session.add_error(
-                        f"model call error: {model_output.error_message}"
-                    )
-                runtime_session.final_output = model_output.content or ""
-                model_output.metadata = self._build_output_metadata(
-                    model_output.metadata,
+                return self._finalize_model_output(
+                    model_output,
+                    prompt_text,
                     runtime_session,
                 )
-                return model_output
-                    
         else:
             model_output, prompt_text = self.call_model(input_data)
-            runtime_session.add_model_call(
-                prompt=prompt_text or "",
-                success=model_output.success,
-                output=model_output.content,
-                error=model_output.error_message,
-            )
-            if not model_output.success:
-                runtime_session.add_error(
-                    f"model call error: {model_output.error_message}"
-                )
-            runtime_session.final_output = model_output.content or ""
-            model_output.metadata = self._build_output_metadata(
-                model_output.metadata,
+            return self._finalize_model_output(
+                model_output,
+                prompt_text,
                 runtime_session,
             )
-            return model_output

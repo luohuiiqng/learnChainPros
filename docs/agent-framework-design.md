@@ -334,8 +334,10 @@
 2. 将 `Workflow` 与 `Executor` 更自然地接入更高层的 Agent 主流程。
 3. 为工作流步骤执行、步骤结果传递补更稳的断言型测试。
 4. 引入最小 `RuntimeSession`，作为单轮运行快照对象记录输入、规划、调用轨迹与最终输出。
-5. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
-6. 为后续 `Runtime`、`Observability` 和多 Agent 协作继续预留接口。
+5. 逐步将 `RuntimeSession` 演进为可序列化、可聚合的 runtime snapshot。
+6. 为后续 `TranscriptStore / SessionStore / Runtime` 预留接口。
+7. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
+8. 为后续 `Observability` 和多 Agent 协作继续预留接口。
 
 ## 8. 当前阶段状态
 
@@ -361,8 +363,22 @@
 2. `Workflow` 与 `Executor` 的顺序执行链路稳定化。
 3. 步骤结果传递能力稳定化。
 4. `RuntimeSession` 作为最小 runtime 观测对象稳定接入主链。
-5. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
-6. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+5. 为未来的 canonical runtime snapshot 设计预留空间。
+6. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
+7. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+
+补充说明：
+
+结合对 `student/everything-claude-code` 的学习，后续 Runtime 设计应重点关注以下演进方向：
+
+1. `RuntimeSession` 与“对外标准快照协议”分层。
+   当前 `RuntimeSession` 适合作为框架内部运行对象，后续再演进到面向持久化、回放、UI 与控制层的 canonical snapshot。
+2. Session Adapter 思维。
+   不同来源的运行信息后续可先经 adapter 归一化，再进入统一快照结构，而不是让上层直接依赖具体 harness 或具体执行器的私有格式。
+3. Skills-first / Workflow-surface 思维。
+   后续除了内核抽象，还要逐步思考“哪些能力应成为长期稳定的工作流表面”，而不是把所有触发方式都固化成命令壳。
+4. Agent-first orchestration policy。
+   多 Agent 不是只增加代理数量，而是要进一步定义：什么时候调谁、如何路由、如何组合，以及默认的协作策略。
 
 后续如果没有明确说明，所有实现优先级都应服从这一阶段目标。
 
