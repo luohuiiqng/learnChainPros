@@ -49,6 +49,19 @@ assert runtime_session.workflow_result["results"][0]["step_name"] == "get_time"
 assert runtime_session.workflow_result["results"][0]["success"] is True
 assert runtime_session.workflow_result["results"][1]["step_name"] == "generate_reply"
 assert runtime_session.workflow_result["results"][1]["success"] is True
+assert len(runtime_session.workflow_trace) == 2
+assert runtime_session.workflow_trace[0]["step_name"] == "get_time"
+assert runtime_session.workflow_trace[0]["action"] == "tool"
+assert runtime_session.workflow_trace[0]["success"] is True
+assert runtime_session.workflow_trace[0]["output"] == runtime_session.workflow_result["results"][0]["output"]
+assert runtime_session.workflow_trace[0]["error"] is None
+assert runtime_session.workflow_trace[0]["timestamp"]
+assert runtime_session.workflow_trace[1]["step_name"] == "generate_reply"
+assert runtime_session.workflow_trace[1]["action"] == "model"
+assert runtime_session.workflow_trace[1]["success"] is True
+assert runtime_session.workflow_trace[1]["output"] == runtime_session.workflow_result["results"][1]["output"]
+assert runtime_session.workflow_trace[1]["error"] is None
+assert runtime_session.workflow_trace[1]["timestamp"]
 assert runtime_session.final_output == agent_output.content
 assert runtime_session.errors == []
 

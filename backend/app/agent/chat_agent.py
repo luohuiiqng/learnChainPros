@@ -92,6 +92,20 @@ class ChatAgent(BaseAgent):
         )
         runtime_session.workflow_result = workflow_output
         results = workflow_output.get("results", [])
+        for result in results:
+            step_name = result.get("step_name", "unknown")
+            for step in plan.get("steps", []):
+                if step.get("step_name", "unknown") == step_name:
+                    action = step.get("action", "unknown")
+
+                    runtime_session.add_workflow_step_trace(
+                        step_name=result.get("step_name", "unknown"),
+                        action=action,
+                        success=result.get("success", False),
+                        output=result.get("output", ""),
+                        error=result.get("error", None),
+                    )
+
         final_result = results[-1] if results else {}
         runtime_session.final_output = final_result.get("output", "")
         self._add_memory_message(

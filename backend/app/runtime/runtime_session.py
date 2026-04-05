@@ -13,6 +13,7 @@ class RuntimeSession:
     workflow_result: dict[str, Any] | None = None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     model_calls: list[dict[str, Any]] = field(default_factory=list)
+    workflow_trace: list[dict[str, Any]] = field(default_factory=list)
     final_output: str | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -44,5 +45,19 @@ class RuntimeSession:
             }
         )
 
+    def add_workflow_step_trace(
+        self, step_name: str, action: str, success: bool, output: Any, error: str | None
+    ) -> None:
+        timestamp = datetime.now().isoformat()
+        self.workflow_trace.append(
+            {
+                "step_name": step_name,
+                "action": action,
+                "success": success,
+                "output": output,
+                "error": error,
+                "timestamp": timestamp,
+            }
+        )
     def add_error(self, error_message: str) -> None:
         self.errors.append(error_message)
