@@ -94,6 +94,11 @@ class ChatAgent(BaseAgent):
         results = workflow_output.get("results", [])
         final_result = results[-1] if results else {}
         runtime_session.final_output = final_result.get("output", "")
+        self._add_memory_message(
+            runtime_session.session_id,
+            "assistant",
+            runtime_session.final_output,
+        )
         if not workflow_output.get("success", False):
             runtime_session.add_error(workflow_output.get("error", ""))
         if not final_result.get("success", False):
@@ -157,7 +162,12 @@ class ChatAgent(BaseAgent):
             plan = self._planner.plan(input_data)
             runtime_session.planner_result = plan
             if plan is not None:
-                if plan.get("action")=="tool":
+                if plan.get("action") == "workflow":
+                    return self._run_workflow(
+                        plan,
+                        runtime_session,
+                    )
+                elif plan.get("action") == "tool":
                     tool_name = plan.get("tool_name")
                     if tool_name is not None:
                         tool_output = self.call_tool(tool_name,ToolInput(params={}))
@@ -193,11 +203,7 @@ class ChatAgent(BaseAgent):
                             prompt_text,
                             runtime_session,
                         )
-                elif plan.get("action") == "workflow":
-                    return self._run_workflow(
-                        plan,
-                        runtime_session,
-                    )
+
                 else:
                     model_output, prompt_text = self.call_model(input_data)
                     return self._finalize_model_output(

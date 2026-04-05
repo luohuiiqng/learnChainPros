@@ -22,8 +22,8 @@ class SequentialWorkflow(BaseWorkflow):
             if not step_result.get("success",False):
                 return {
                     "success": False,
-                    "error": f"Step {step.get('name','unknown')} failed",
-                    "results": results
+                    "error": f"Step {step.get('step_name', 'unknown')} failed",
+                    "results": results,
                 }
         return {
             "success": True,
