@@ -231,8 +231,9 @@ control-plane / replay / monitor / UI
 目标：
 
 1. 让运行轨迹可存
-2. 让运行轨迹可回放
+2. 让 session 元信息与多轮运行记录分层管理
 3. 为后续 UI/调试视图做准备
+4. 为 replay / session 查询 / 回放能力打基础
 
 ## 第四阶段：考虑 canonical snapshot
 
@@ -256,7 +257,7 @@ control-plane / replay / monitor / UI
 
 再下一步
   TranscriptStore / SessionStore
-    -> 保存运行轨迹
+    -> 保存运行轨迹并建立 session 目录层
 
 更后面
   Canonical Runtime Snapshot
@@ -278,6 +279,27 @@ control-plane / replay / monitor / UI
 也就是说：
 
 - 不要一上来就做大而全 `Runtime`
+- 不要跳过 `RuntimeSession -> TranscriptStore -> SessionStore` 这条中间演进路径
+
+## 8. 当前阶段补充说明
+
+截至当前阶段，`learnChainPros` 已经不只是“规划 + Workflow + RuntimeSession”：
+
+1. `RuntimeSession` 已能记录单轮输入、规划、`workflow_trace`、工具/模型调用与最终输出。
+2. `TranscriptStore` 已接入 `ChatAgent` 主链，可按 `session_id` 追加统一结构的 `agent_run` 记录。
+3. `SessionStore` 已接入 `ChatAgent` 主链，可在 transcript 写入前确保 session 已存在。
+
+这意味着我们当前正处于：
+
+## `RuntimeSession + Workflow/Executor + TranscriptStore/SessionStore` 的过渡阶段
+
+这一阶段的意义是：
+
+- 先把“单轮快照”
+- 扩展成“多轮记录”
+- 再扩展成“有 session 容器的运行记录系统”
+
+后面如果继续演进到 canonical snapshot / runtime manager，就会顺很多。
 - 不要一上来就做复杂 session schema
 - 不要一上来就做控制平面
 

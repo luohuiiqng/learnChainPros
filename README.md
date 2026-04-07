@@ -13,6 +13,8 @@
 - `BaseWorkflow`、`SequentialWorkflow` 与 `AgentExecutor` 最小工作流执行能力
 - Workflow 支持步骤结果传递，后一步可消费前一步输出
 - `RuntimeSession` 运行快照能力，可记录单轮输入、规划、调用轨迹与最终输出
+- `BaseTranscriptStore` 与 `InMemoryTranscriptStore`，可按 `session_id` 保存多轮运行记录
+- `BaseSessionStore` 与 `InMemorySessionStore`，可管理 session 元信息并在主链中自动建 session
 - 前后端一问一回联调
 - Docker 化后端部署
 - Nginx 部署前端并代理后端接口
@@ -27,11 +29,14 @@ AgentInput
   -> 写入 user memory
   -> RulePlanner
      -> ToolRouter 匹配工具
-     -> 生成 tool / model plan
+     -> 生成 tool / model / workflow plan
   -> ChatAgent 执行计划
      -> tool plan：ToolRegistry -> Tool
      -> model plan：Memory history -> PromptBuilder -> OpenAIModel / MockModel
-  -> RuntimeSession 聚合本轮输入、计划、调用轨迹与最终输出
+     -> workflow plan：SequentialWorkflow -> AgentExecutor
+  -> RuntimeSession 聚合本轮输入、计划、步骤轨迹、调用轨迹与最终输出
+  -> SessionStore 确保当前 session 存在
+  -> TranscriptStore 追加本轮 agent_run 记录
   -> 写入 assistant memory
   -> AgentOutput
 ```
@@ -97,9 +102,10 @@ AgentInput
 - 定义 Memory 抽象与会话记忆实现
 - 定义 Planner 抽象与规则规划实现
 - 定义 Runtime 最小运行快照对象
+- 定义 Transcript / Session 存储抽象与内存实现
 - 定义 Workflow / Executor 抽象与最小顺序执行能力
 - 定义统一输入输出协议
-- 执行带规则规划、工具调用、短期记忆、运行快照与最小工作流的 Agent 推理链路
+- 执行带规则规划、工具调用、短期记忆、运行快照、会话记录与最小工作流的 Agent 推理链路
 
 核心文件：
 
@@ -123,6 +129,10 @@ AgentInput
 - `backend/app/workflows/base_executor.py`
 - `backend/app/workflows/agent_executor.py`
 - `backend/app/runtime/runtime_session.py`
+- `backend/app/runtime/base_transcript_store.py`
+- `backend/app/runtime/in_memory_transcript_store.py`
+- `backend/app/runtime/base_session_store.py`
+- `backend/app/runtime/in_memory_session_store.py`
 - `backend/app/schemas/agent_input.py`
 - `backend/app/schemas/agent_output.py`
 - `backend/app/schemas/agent_context.py`
@@ -146,11 +156,14 @@ AgentInput
   -> 写入 user memory
   -> RulePlanner.plan()
      -> ToolRouter.route()
-     -> 生成 tool / model plan
+     -> 生成 tool / model / workflow plan
   -> ChatAgent 执行计划
      -> 命中工具：ToolRegistry.get_tool() -> Tool.run()
      -> 未命中：PromptBuilder.build_prompt() -> OpenAIModel.generate() / MockModel.generate()
-  -> RuntimeSession 记录 planner_result / tool_calls / model_calls / final_output
+     -> workflow：SequentialWorkflow.run() -> AgentExecutor.execute_step()
+  -> RuntimeSession 记录 planner_result / workflow_trace / tool_calls / model_calls / final_output
+  -> SessionStore 确保 session 存在
+  -> TranscriptStore 追加本轮 agent_run 记录
   -> 写入 assistant memory
   -> AgentOutput
   -> ChatResponse
@@ -242,7 +255,24 @@ AgentInput
 - 记录单轮运行的核心快照
 - 聚合 `session_id`、`user_input`、`planner_result`
 - 记录 `tool_calls`、`model_calls`、`final_output` 与 `errors`
+- 记录 `workflow_trace`
 - 作为最小 runtime 观测对象挂入 `AgentOutput.metadata["runtime_session"]`
+
+### `BaseTranscriptStore / InMemoryTranscriptStore`
+
+职责：
+
+- 定义 transcript 存储抽象接口
+- 按 `session_id` 保存多轮 `agent_run` 记录
+- 为后续运行轨迹回看、调试与回放预留存储层
+
+### `BaseSessionStore / InMemorySessionStore`
+
+职责：
+
+- 定义 session 元信息存储抽象接口
+- 管理 session 的 `session_id`、`created_at`、`updated_at` 与 `metadata`
+- 在 `ChatAgent` 主链中与 `TranscriptStore` 协同，确保 transcript 落库前 session 已存在
 
 ### `routes/chat.py`
 

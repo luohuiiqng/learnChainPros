@@ -59,7 +59,9 @@
    驱动 Agent 生命周期，管理事件、状态流转、错误恢复与执行上下文。
 8. `Workflow`
    用于定义串行、并行、条件分支、循环、人工介入等复杂流程。
-9. `Observability`
+9. `Session / Transcript Store`
+   管理 session 元信息与多轮运行记录，为持久化、回放与会话级查询提供基础设施。
+10. `Observability`
    提供日志、追踪、事件总线、指标与调试能力。
 
 ### 3.2 接口优先
@@ -351,11 +353,13 @@
 6. `BasePlanner` 与 `RulePlanner` 已落地，`ToolRouter -> RulePlanner -> ChatAgent` 的最小规划执行链路已跑通。
 7. `BaseWorkflow`、`SequentialWorkflow`、`BaseExecutor` 与 `AgentExecutor` 已落地，最小工作流执行链路已跑通。
 8. Workflow 已支持最小的步骤结果传递能力，后一步可消费前一步输出。
-9. `RuntimeSession` 已落地，并以最小方式接入 `ChatAgent`，可记录单轮输入、规划结果、工具/模型调用、最终输出与错误摘要。
+9. `RuntimeSession` 已落地，并接入 `ChatAgent`，可记录单轮输入、规划结果、`workflow_trace`、工具/模型调用、最终输出与错误摘要。
+10. `BaseTranscriptStore`、`InMemoryTranscriptStore` 已落地，`ChatAgent` 已可在每轮运行结束后追加统一结构的 `agent_run` 记录。
+11. `BaseSessionStore`、`InMemorySessionStore` 已落地，`ChatAgent` 已可在 transcript 写入前确保 session 存在。
 
 当前阶段应统一定义为：
 
-`阶段 5 与阶段 6 的过渡阶段：规则规划、最小工作流、执行层与最小运行快照已成立`
+`阶段 5、阶段 6 与 Runtime Store 过渡阶段：规则规划、最小工作流、执行层、运行快照与最小会话记录基础设施已成立`
 
 这一阶段的核心目标不再只是“工具调用 + 短期记忆”，而是把规划层、工作流层和执行层真正接回主流程，重点包括：
 
@@ -363,9 +367,11 @@
 2. `Workflow` 与 `Executor` 的顺序执行链路稳定化。
 3. 步骤结果传递能力稳定化。
 4. `RuntimeSession` 作为最小 runtime 观测对象稳定接入主链。
-5. 为未来的 canonical runtime snapshot 设计预留空间。
-6. `ChatAgent`、`Planner`、`Workflow`、`Executor` 的职责边界持续收清。
-7. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+5. `TranscriptStore` 作为多轮运行记录层稳定接入主链。
+6. `SessionStore` 作为 session 元信息层稳定接入主链。
+7. 为未来的 canonical runtime snapshot 设计预留空间。
+8. `ChatAgent`、`Planner`、`Workflow`、`Executor`、`SessionStore` 与 `TranscriptStore` 的职责边界持续收清。
+9. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
 
 补充说明：
 
