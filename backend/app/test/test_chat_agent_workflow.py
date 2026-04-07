@@ -75,6 +75,15 @@ assert runtime_session.workflow_trace[1]["success"] is True
 assert runtime_session.workflow_trace[1]["output"] == runtime_session.workflow_result["results"][1]["output"]
 assert runtime_session.workflow_trace[1]["error"] is None
 assert runtime_session.workflow_trace[1]["timestamp"]
+assert runtime_session.tool_calls[0]["tool_name"] == "time_tool"
+assert runtime_session.tool_calls[0]["output"] == runtime_session.workflow_result["results"][0]["output"]
+assert len(runtime_session.model_calls) == 1
+assert "当前时间是" in runtime_session.model_calls[0]["prompt"]
+assert runtime_session.workflow_result["results"][0]["output"] in runtime_session.model_calls[0]["prompt"]
+assert runtime_session.model_calls[0]["success"] is True
+assert runtime_session.model_calls[0]["output"] == runtime_session.workflow_result["results"][1]["output"]
+assert runtime_session.model_calls[0]["error"] is None
+assert runtime_session.model_calls[0]["timestamp"]
 assert runtime_session.final_output == agent_output.content
 assert runtime_session.errors == []
 

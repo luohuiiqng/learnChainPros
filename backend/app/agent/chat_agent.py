@@ -105,6 +105,35 @@ class ChatAgent(BaseAgent):
                         output=result.get("output", ""),
                         error=result.get("error", None),
                     )
+                    if action == "tool":
+                        runtime_session.add_tool_call(
+                            tool_name=step.get("tool_name", "unknown"),
+                            success=result.get("success", False),
+                            output=result.get("output", ""),
+                            error=result.get("error", None),
+                        )
+                    elif action == "model":
+                        prompt_template = step.get("prompt_template", "")
+                        use_step_result = step.get("use_step_result")
+                        finally_prompt = step.get("prompt", "")
+                        if not finally_prompt and use_step_result:
+                            dependency_output = ""
+                            for previous_result in results:
+                                if previous_result.get("step_name") == use_step_result:
+                                    dependency_output = previous_result.get(
+                                        "output", ""
+                                    )
+                                    finally_prompt = prompt_template.replace(
+                                        "{step_output}", str(dependency_output)
+                                    )
+                                    break
+
+                        runtime_session.add_model_call(
+                            prompt=finally_prompt or "",
+                            success=result.get("success", False),
+                            output=result.get("output", ""),
+                            error=result.get("error", None),
+                        )
 
         final_result = results[-1] if results else {}
         runtime_session.final_output = final_result.get("output", "")
