@@ -3,6 +3,7 @@ from typing import Any
 
 
 class BaseTranscriptStore(ABC):
+    """记录多轮对话的存储接口"""
     def __init__(self, **kwargs: Any):
         self._config = kwargs
 
