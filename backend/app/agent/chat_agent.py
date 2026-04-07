@@ -15,16 +15,25 @@ from app.planners.base_planner import BasePlanner
 from app.runtime.runtime_session import RuntimeSession
 from app.workflows.sequential_workflow import SequentialWorkflow
 from app.workflows.agent_executor import AgentExecutor
+from app.runtime.base_transcript_store import BaseTranscriptStore
 
 class ChatAgent(BaseAgent):
-    def __init__(self,model:BaseModel=None,tool_registry:ToolRegistry=None,
-                 memory:BaseMemory|None=None,prompt_builder:BasePrompt|None=None,
-                 planner:BasePlanner|None=None,**kwargs)->None:
+    def __init__(
+        self,
+        model: BaseModel = None,
+        tool_registry: ToolRegistry = None,
+        memory: BaseMemory | None = None,
+        prompt_builder: BasePrompt | None = None,
+        planner: BasePlanner | None = None,
+        transcript_store: BaseTranscriptStore | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(model = model,**kwargs)
         self._tool_registry = tool_registry
         self._memory = memory
         self._prompt_builder = prompt_builder if prompt_builder is not None else PromptBuilder()
         self._planner = planner
+        self._transcript_store = transcript_store
 
     def _build_output_metadata(
         self,
@@ -206,10 +215,23 @@ class ChatAgent(BaseAgent):
             runtime_session.planner_result = plan
             if plan is not None:
                 if plan.get("action") == "workflow":
-                    return self._run_workflow(
+                    agent_output = self._run_workflow(
                         plan,
                         runtime_session,
                     )
+                    if self._transcript_store is not None:
+                        self._transcript_store.append_entry(
+                            session_id=input_data.session_id,
+                            entry={
+                                "type": "agent_run",
+                                "user_input": input_data.message,
+                                "final_output": runtime_session.final_output,
+                                "success": agent_output.success,
+                                "runtime_session": runtime_session,
+                                "timestamp": datetime.now().isoformat(),
+                            },
+                        )
+                    return agent_output
                 elif plan.get("action") == "tool":
                     tool_name = plan.get("tool_name")
                     if tool_name is not None:
@@ -230,7 +252,8 @@ class ChatAgent(BaseAgent):
                             runtime_session.add_error(
                                 f"tool call error: {tool_output.error_message}"
                             )
-                        return AgentOutput(
+
+                        agent_output = AgentOutput(
                             content=tool_output.content or "",
                             success=tool_output.success,
                             error_message=tool_output.error_message,
@@ -239,32 +262,98 @@ class ChatAgent(BaseAgent):
                                 runtime_session,
                             ),
                         )
+                        if self._transcript_store is not None:
+                            self._transcript_store.append_entry(
+                                session_id=input_data.session_id,
+                                entry={
+                                    "type": "agent_run",
+                                    "user_input": input_data.message,
+                                    "final_output": runtime_session.final_output,
+                                    "success": tool_output.success,
+                                    "runtime_session": runtime_session,
+                                    "timestamp": datetime.now().isoformat(),
+                                },
+                            )
+                        return agent_output
                     else:
                         model_output, prompt_text = self.call_model(input_data)
-                        return self._finalize_model_output(
+                        agent_output = self._finalize_model_output(
                             model_output,
                             prompt_text,
                             runtime_session,
                         )
+                        if self._transcript_store is not None:
+                            self._transcript_store.append_entry(
+                                session_id=input_data.session_id,
+                                entry={
+                                    "type": "agent_run",
+                                    "user_input": input_data.message,
+                                    "final_output": runtime_session.final_output,
+                                    "success": model_output.success,
+                                    "runtime_session": runtime_session,
+                                    "timestamp": datetime.now().isoformat(),
+                                },
+                            )
+                        return agent_output
 
                 else:
                     model_output, prompt_text = self.call_model(input_data)
-                    return self._finalize_model_output(
+                    agent_output = self._finalize_model_output(
                         model_output,
                         prompt_text,
                         runtime_session,
                     )
+                    if self._transcript_store is not None:
+                        self._transcript_store.append_entry(
+                            session_id=input_data.session_id,
+                            entry={
+                                "type": "agent_run",
+                                "user_input": input_data.message,
+                                "final_output": runtime_session.final_output,
+                                "success": model_output.success,
+                                "runtime_session": runtime_session,
+                                "timestamp": datetime.now().isoformat(),
+                            },
+                        )
+                    return agent_output
+
             else:
                 model_output, prompt_text = self.call_model(input_data)
-                return self._finalize_model_output(
+                agent_output = self._finalize_model_output(
                     model_output,
                     prompt_text,
                     runtime_session,
                 )
+                if self._transcript_store is not None:
+                    self._transcript_store.append_entry(
+                        session_id=input_data.session_id,
+                        entry={
+                            "type": "agent_run",
+                            "user_input": input_data.message,
+                            "final_output": runtime_session.final_output,
+                            "success": model_output.success,
+                            "runtime_session": runtime_session,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+                return agent_output
         else:
             model_output, prompt_text = self.call_model(input_data)
-            return self._finalize_model_output(
+            agent_output = self._finalize_model_output(
                 model_output,
                 prompt_text,
                 runtime_session,
             )
+            if self._transcript_store is not None:
+                self._transcript_store.append_entry(
+                    session_id=input_data.session_id,
+                    entry={
+                        "type": "agent_run",
+                        "user_input": input_data.message,
+                        "final_output": runtime_session.final_output,
+                        "success": model_output.success,
+                        "runtime_session": runtime_session,
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                )
+            return agent_output
