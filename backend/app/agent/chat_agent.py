@@ -17,6 +17,7 @@ from app.workflows.sequential_workflow import SequentialWorkflow
 from app.workflows.agent_executor import AgentExecutor
 from app.runtime.base_transcript_store import BaseTranscriptStore
 from app.runtime.base_session_store import BaseSessionStore
+from app.runtime.transcript_entry import TranscriptEntry
 
 class ChatAgent(BaseAgent):
     def __init__(
@@ -52,15 +53,15 @@ class ChatAgent(BaseAgent):
         user_input: str,
         agent_output: AgentOutput,
         runtime_session: RuntimeSession,
-    ) -> dict[str, Any]:
-        return {
-            "type": "agent_run",
-            "user_input": user_input,
-            "final_output": runtime_session.final_output,
-            "success": agent_output.success,
-            "runtime_session": runtime_session,
-            "timestamp": datetime.now().isoformat(),
-        }
+    ) -> TranscriptEntry:
+        return TranscriptEntry(
+            type="agent_run",
+            user_input=user_input,
+            final_output=runtime_session.final_output,
+            success=agent_output.success,
+            runtime_session=runtime_session,
+            timestamp=datetime.now().isoformat(),
+        )
 
     def _append_transcript_entry(
         self,

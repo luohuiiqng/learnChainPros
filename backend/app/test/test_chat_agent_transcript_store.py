@@ -7,6 +7,7 @@ from app.planners.base_planner import BasePlanner
 from app.planners.rule_planner import RulePlanner
 from app.runtime.in_memory_transcript_store import InMemoryTranscriptStore
 from app.runtime.runtime_session import RuntimeSession
+from app.runtime.transcript_entry import TranscriptEntry
 from app.schemas.agent_input import AgentInput
 from app.tools.time_tool import TimeTool
 from app.tools.tool_registry import ToolRegistry
@@ -36,16 +37,17 @@ class WorkflowPlanner(BasePlanner):
 
 
 def assert_transcript_entry_shape(
-    entry: dict[str, Any],
+    entry: TranscriptEntry,
     expected_user_input: str,
     expected_output: str,
 ) -> RuntimeSession:
-    assert entry["type"] == "agent_run"
-    assert entry["user_input"] == expected_user_input
-    assert entry["final_output"] == expected_output
-    assert isinstance(entry["success"], bool)
-    assert entry["timestamp"]
-    runtime_session = entry["runtime_session"]
+    assert isinstance(entry, TranscriptEntry)
+    assert entry.type == "agent_run"
+    assert entry.user_input == expected_user_input
+    assert entry.final_output == expected_output
+    assert isinstance(entry.success, bool)
+    assert entry.timestamp
+    runtime_session = entry.runtime_session
     assert isinstance(runtime_session, RuntimeSession)
     assert runtime_session.user_input == expected_user_input
     assert runtime_session.final_output == expected_output

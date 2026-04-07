@@ -3,6 +3,7 @@ from app.models.mock_model import MockModel
 from app.runtime.in_memory_session_store import InMemorySessionStore
 from app.runtime.in_memory_transcript_store import InMemoryTranscriptStore
 from app.runtime.runtime_session import RuntimeSession
+from app.runtime.transcript_entry import TranscriptEntry
 from app.schemas.agent_input import AgentInput
 
 
@@ -29,13 +30,14 @@ assert session["metadata"]["agent_type"] == "chat"
 entries = transcript_store.get_entries(session_id)
 assert len(entries) == 1
 entry = entries[0]
-assert entry["type"] == "agent_run"
-assert entry["user_input"] == "你好"
-assert entry["final_output"] == agent_output.content
-assert entry["success"] == agent_output.success
-assert entry["timestamp"]
-assert isinstance(entry["runtime_session"], RuntimeSession)
-assert entry["runtime_session"].session_id == session_id
+assert isinstance(entry, TranscriptEntry)
+assert entry.type == "agent_run"
+assert entry.user_input == "你好"
+assert entry.final_output == agent_output.content
+assert entry.success == agent_output.success
+assert entry.timestamp
+assert isinstance(entry.runtime_session, RuntimeSession)
+assert entry.runtime_session.session_id == session_id
 
 sessionless_model = MockModel(response_text="mock sessionless response")
 sessionless_store = InMemorySessionStore()
