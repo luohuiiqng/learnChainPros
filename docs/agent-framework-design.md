@@ -397,7 +397,160 @@
 2. 如果阶段目标发生变化，应优先更新本文档，再更新具体阶段计划。
 3. 如果某个模块实现与本文档冲突，应先讨论并修订设计，再继续编码。
 
-## 10. 协作方式与成长目标
+## 10. 下一阶段实现顺序
+
+在当前 `RuntimeSession + TranscriptEntry + TranscriptStore + SessionStore + RuntimeManager`
+已经成立的前提下，后续实现顺序应尽量保持克制，优先按以下路线推进：
+
+1. `AgentFactory`
+   职责：把 `ChatService` 中的依赖组装职责提出来，形成清晰的组装根。
+2. 查询能力
+   职责：让 `SessionStore / TranscriptStore` 从“会记录”变成“可读取”，优先补 `list_sessions()` 和 `get_transcript(session_id)`。
+3. 标准快照协议
+   职责：让 `RuntimeSession / TranscriptEntry` 提供稳定、可序列化的对外结构。
+4. 持久化 Store
+   职责：把当前内存版记录层逐步推进到可落盘、可重启恢复的实现。
+5. 可视化与调试能力
+   职责：让 session、transcript、runtime snapshot 记录真正可被查看、分析与调试。
+
+这条顺序的核心原则是：
+
+1. 先收口组装根。
+2. 再打通读取链路。
+3. 再统一快照协议。
+4. 最后再进入持久化与可视化阶段。
+
+如果没有明确的新优先级，后续实现应优先服从这条路线，而不是继续零散增加功能点。
+
+## 11. 应用层组装边界
+
+当前系统已经不只是“Agent 内核模块集合”，而是开始形成完整的应用层调用链：
+
+```text
+route
+  -> chat service
+  -> agent factory（下一步）
+  -> chat agent
+  -> planner / workflow / executor
+  -> runtime manager
+  -> session / transcript stores
+```
+
+这一层分工的核心原则是：
+
+1. `route`
+   职责：只负责 HTTP 请求校验、调用 service、返回统一响应。
+2. `ChatService`
+   职责：只负责业务调用、统一 `session_id`、对外暴露应用层接口。
+3. `AgentFactory`
+   职责：负责组装 `ChatAgent` 及其依赖，是应用层组装根，而不是 Agent 框架内核的一部分。
+4. `ChatAgent`
+   职责：负责单轮推理主链执行，不再承担应用层组装职责。
+5. `RuntimeManager`
+   职责：负责 runtime 记录链路协调，不直接承担 HTTP 或业务入口职责。
+
+后续如果继续扩展，不应让 `route` 和 `ChatService` 直接感知过多底层实现细节，而应继续通过组装根把依赖关系收口。
+
+## 12. LangChain 值得学习的地方
+
+结合当前我们自己的框架演进，LangChain 有几类特别值得学习的点：
+
+1. 标准化模型接口
+   LangChain 强调统一模型接口，降低 provider 差异带来的耦合成本，这一点非常值得我们继续坚持到 `BaseModel` 抽象上。
+
+2. 工具与模型能力的统一编排表面
+   LangChain 把 tools、messages、agents 放在统一使用表面上，让“换模型、换工具、换 provider”这件事更平滑。我们自己的 `ToolRegistry / ToolRouter / Planner / ChatAgent` 也应继续沿着这个方向收口。
+
+3. 从高层易用抽象到低层可控 runtime 的分层
+   LangChain 官方当前明确区分了高层 LangChain agent 与更低层的 LangGraph runtime/orchestration，这一点很值得学习。我们的 `ChatAgent -> Workflow/Executor -> RuntimeManager` 也应继续保持这种分层，不要把所有控制逻辑堆回一个对象里。
+
+4. 记录、调试、观测是框架一等公民
+   LangChain 官方非常强调 tracing、debugging、observability，这和我们现在推进 `RuntimeSession / TranscriptEntry / SessionStore / TranscriptStore` 的方向高度一致。后续不应把记录层当成附属功能，而要继续把它当成主链能力建设。
+
+5. 先提供简单入口，再逐步开放高级能力
+   LangChain 的一个优点是既有容易上手的入口，也保留向更复杂 orchestration 演进的空间。对我们来说，这意味着：
+   - 现在先保持 `ChatService / ChatAgent` 的简单入口
+   - 后续再逐步引入 `AgentFactory`、查询能力、快照协议、持久化与 replay
+
+6. 明确框架内核和应用层组装根的边界
+   这点对我们尤其重要。LangChain 本身提供框架能力，但应用如何装配、如何接业务入口、如何接 deployment / observability，是另外一层。我们的 `AgentFactory` 也应该站在这一层，而不是继续混进 Agent 内核。
+
+如果继续沿着这些点演进，我们的目标不是“照着 LangChain 复刻”，而是学习它在：
+
+- 抽象边界
+- runtime 分层
+- 记录与调试
+- 高层易用性和底层可控性的平衡
+
+这几方面的工程取舍。
+
+### 12.1 LangGraph 值得学习的地方
+
+如果把视角进一步从 LangChain 高层抽象下沉到 LangGraph runtime/orchestration，那么还有几类特别值得我们吸收的思想：
+
+1. `state` 作为统一运行时承载对象
+   LangGraph 的核心不是“多几个节点”，而是让整条执行链围绕一份共享 `state` 流转。对我们来说，这一点最直接的映射就是 `RuntimeSession`。
+   后续演进方向应是：
+   - `RuntimeSession` 继续承担内部共享状态对象的角色
+   - 各执行步骤明确自己读取哪些字段、写回哪些字段
+
+2. `node` 与业务步骤解耦
+   LangGraph 把流程拆成 node，每个 node 负责一小段明确处理逻辑。对我们来说，当前已经有 node 雏形：
+   - planner step
+   - tool step
+   - model step
+   - workflow step
+   - executor step
+   后续如果引入更复杂 workflow，不应继续把所有逻辑堆回 `ChatAgent`，而应逐步把步骤职责显式化。
+
+3. `edge` 与路由规则显式化
+   LangGraph 的价值不只是执行节点，更重要的是把“下一步去哪里”变成显式边和条件。对我们来说，这对应的是：
+   - `RulePlanner` 的 action 路由
+   - workflow 中的步骤顺序
+   - 后续条件分支、失败 fallback、重试策略
+   这意味着未来如果系统继续复杂化，控制流不应继续只靠分散的 `if/else`，而要逐步显式建模。
+
+4. 状态转移与执行过程分层
+   LangGraph 很强调：
+   - node 负责执行
+   - state 负责承载
+   - graph/edge 负责转移
+   这对我们非常重要。我们当前的合理演进方向应是：
+   - `Workflow / Executor` 负责执行
+   - `RuntimeSession` 负责状态承载
+   - planner / workflow 定义负责转移决策
+   - `RuntimeManager` 负责记录链协调
+
+5. 为循环、分支和多 agent 预留 graph 化能力
+   LangGraph 真正强的地方在于：
+   - 条件分支
+   - 循环
+   - checkpoint
+   - 多 agent orchestration
+   我们当前不应该直接照搬这些能力，但后续设计时应为这些方向保留空间，尤其是在：
+   - workflow step 定义
+   - runtime trace
+   - transcript snapshot
+   - orchestration policy
+   上避免过早写死。
+
+6. 先保留 graph 思维，再决定何时 graph 化
+   当前阶段我们最正确的做法，不是立刻引入完整 graph runtime，而是先保持 graph 思维：
+   - `RuntimeSession` 像 state
+   - planner/tool/model/workflow step 像 node
+   - 规则分流与步骤跳转像 edge
+   等条件分支 workflow、retry、fallback、多 agent 需求变强时，再决定是否显式引入 graph 结构。
+
+对我们来说，LangGraph 最值得学习的并不是“图很高级”，而是：
+
+- 统一状态对象
+- 显式步骤节点
+- 显式转移规则
+- 控制流与执行层分开
+
+这四点会直接决定我们后续 workflow、runtime、orchestration 是否能继续健康演进。
+
+## 13. 协作方式与成长目标
 
 在本项目的实现过程中，AI 助手不仅承担协作开发者的角色，也承担导师角色。
 

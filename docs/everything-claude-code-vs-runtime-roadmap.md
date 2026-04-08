@@ -336,3 +336,85 @@ control-plane / replay / monitor / UI
 - 有 control-plane 视角
 
 而我们现在最正确的做法，是继续沿着这条路线一步一步长，不要跳级。
+
+---
+
+## 9. 后续路线
+
+结合当前项目状态，后续推进不应再按“零散功能点”思考，而应按以下阶段稳定推进：
+
+### 第一阶段：收口组装根
+
+优先目标：
+
+1. 引入 `AgentFactory`，把 `ChatService` 中的组装职责提出来。
+2. 明确 `route -> service -> factory -> agent framework` 的分层关系。
+3. 让 `ChatService` 更聚焦于业务调用与 session 统一，而不是底层依赖构造。
+
+### 第二阶段：打通查询能力
+
+优先目标：
+
+1. 为 `ChatService` 增加最小查询接口，例如：
+   - `list_sessions()`
+   - `get_transcript(session_id)`
+2. 为 route 增加最小查询 API，例如：
+   - `GET /sessions`
+   - `GET /sessions/{session_id}/transcript`
+3. 让 `SessionStore / TranscriptStore` 从“会保存”走向“可读取、可观察”。
+
+### 第三阶段：建立标准快照协议
+
+优先目标：
+
+1. 让 `RuntimeSession` 提供 `to_dict()` 或 `to_snapshot()`。
+2. 让 `TranscriptEntry` 提供 `to_dict()`。
+3. 统一 session / transcript / runtime 的对外序列化结构。
+4. 将当前内部 Python 对象逐步收敛为稳定、可序列化、可持久化的快照协议。
+
+### 第四阶段：引入持久化 Store
+
+优先目标：
+
+1. 提供持久化版 `SessionStore`。
+2. 提供持久化版 `TranscriptStore`。
+3. 第一版优先 SQLite 或文件落盘，不急着做复杂数据库设计。
+4. 让 session / transcript 能跨进程与重启保留。
+
+### 第五阶段：把记录层做成可视化与可调试能力
+
+优先目标：
+
+1. 增加 session 列表查看能力。
+2. 增加 transcript 查看能力。
+3. 增加 runtime snapshot 查看能力。
+4. 为后续 replay、observability、调试面板打基础。
+
+### 第六阶段：进入复杂 workflow 与多 agent 地基
+
+优先目标：
+
+1. 引入条件分支 workflow。
+2. 增强 workflow context 和步骤控制能力。
+3. 为多 agent orchestration 预留 role、route、policy 与 runtime 记录结构。
+
+---
+
+## 10. 执行顺序建议
+
+如果只看最近的一段实现节奏，建议按下面顺序推进：
+
+1. `AgentFactory`
+2. 查询能力
+3. 快照协议
+4. 持久化 Store
+5. 可视化查看
+6. Replay / Observability
+
+这条顺序的核心原则是：
+
+- 先让系统“会运行”
+- 再让系统“会记录”
+- 再让系统“可读取”
+- 再让系统“可持久化”
+- 最后再让系统“可观察、可回放、可扩展”
