@@ -11,7 +11,11 @@ class BaseTool(ABC):
     
     def validate_input(self,tool_input:ToolInput)->bool:
         return tool_input is not None
-    
+
+    def get_name(self) -> str:
+        tool_name = self._name
+        return tool_name
+
     def run(self,tool_input:ToolInput)->ToolOutput:
         if not self.validate_input(tool_input=tool_input):
             return ToolOutput(success=False,content="",error_message="tool input validate_input failed..")

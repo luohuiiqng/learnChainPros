@@ -26,7 +26,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
             status_code=400,
             detail={"error": {"code": "BAD_REQUEST", "message": "message长度不能超过2000"}},
         )
-    agent_output = request_chat_agent(message)
+    agent_output = request_chat_agent(message=message, session_id=payload.session_id)
     if not agent_output.success:
         return ChatResponse(
         reply=agent_output.error_message,

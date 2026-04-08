@@ -489,6 +489,10 @@ docker run -d \
   -p 127.0.0.1:18000:8000 \
   learnchainpros-backend
 ```
+### 停止容器：
+```bash
+`docker stop learnchainpros-backend
+```
 
 说明：
 

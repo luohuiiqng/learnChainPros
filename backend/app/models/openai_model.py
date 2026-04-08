@@ -25,6 +25,9 @@ class OpenAIModel(BaseModel):
                 )
         #模拟openAI真实的输出
         try:
+            print("************")
+            print(f"input_data.promp:{input_data.prompt}")
+            print("************")
             content = self._client.responses.create(model=self._model_name,input=input_data.prompt)
             return ModelResponse(content=content.output_text,success=True,metadata={"model_name":self._model_name})
         except Exception as e:
