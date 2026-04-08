@@ -5,7 +5,9 @@ from app.memory.in_memory_memory import InMemoryMemory
 from app.models.mock_model import MockModel
 from app.planners.base_planner import BasePlanner
 from app.planners.rule_planner import RulePlanner
+from app.runtime.in_memory_session_store import InMemorySessionStore
 from app.runtime.in_memory_transcript_store import InMemoryTranscriptStore
+from app.runtime.runtime_manager import RuntimeManager
 from app.runtime.runtime_session import RuntimeSession
 from app.runtime.transcript_entry import TranscriptEntry
 from app.schemas.agent_input import AgentInput
@@ -42,7 +44,7 @@ def assert_transcript_entry_shape(
     expected_output: str,
 ) -> RuntimeSession:
     assert isinstance(entry, TranscriptEntry)
-    assert entry.type == "agent_run"
+    assert entry.type == "agent"
     assert entry.user_input == expected_user_input
     assert entry.final_output == expected_output
     assert isinstance(entry.success, bool)
@@ -58,6 +60,11 @@ tool_registry = ToolRegistry()
 tool_registry.register_tool(TimeTool())
 
 transcript_store = InMemoryTranscriptStore()
+session_store = InMemorySessionStore()
+runtime_manager = RuntimeManager(
+    session_store=session_store,
+    transcript_store=transcript_store,
+)
 memory = InMemoryMemory()
 model = MockModel(response_text="mock transcript response")
 
@@ -69,11 +76,11 @@ tool_router.add_rule(
 rule_planner = RulePlanner(tool_router=tool_router)
 
 rule_agent = ChatAgent(
+    runtime_manager=runtime_manager,
     model=model,
     tool_registry=tool_registry,
     memory=memory,
     planner=rule_planner,
-    transcript_store=transcript_store,
 )
 
 session_id = "transcript-rule-session"
@@ -103,12 +110,17 @@ assert model_entry_runtime.tool_calls == []
 assert len(model_entry_runtime.model_calls) == 1
 
 workflow_transcript_store = InMemoryTranscriptStore()
+workflow_session_store = InMemorySessionStore()
+workflow_runtime_manager = RuntimeManager(
+    session_store=workflow_session_store,
+    transcript_store=workflow_transcript_store,
+)
 workflow_model = MockModel(response_text="mock workflow transcript response")
 workflow_agent = ChatAgent(
+    runtime_manager=workflow_runtime_manager,
     model=workflow_model,
     tool_registry=tool_registry,
     planner=WorkflowPlanner(),
-    transcript_store=workflow_transcript_store,
 )
 
 workflow_session_id = "transcript-workflow-session"

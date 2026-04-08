@@ -286,8 +286,10 @@ control-plane / replay / monitor / UI
 截至当前阶段，`learnChainPros` 已经不只是“规划 + Workflow + RuntimeSession”：
 
 1. `RuntimeSession` 已能记录单轮输入、规划、`workflow_trace`、工具/模型调用与最终输出。
-2. `TranscriptStore` 已接入 `ChatAgent` 主链，可按 `session_id` 追加统一结构的 `agent_run` 记录。
-3. `SessionStore` 已接入 `ChatAgent` 主链，可在 transcript 写入前确保 session 已存在。
+2. `TranscriptEntry` 已落地，transcript 记录已从松散 dict 收敛为明确的数据对象。
+3. `TranscriptStore` 已接入 `ChatAgent` 主链，可按 `session_id` 追加统一结构的 `agent` 记录。
+4. `SessionStore` 已接入 `ChatAgent` 主链，可在 transcript 写入前确保 session 已存在。
+5. `RuntimeManager` 已开始统一协调 `RuntimeSession`、`TranscriptEntry`、`TranscriptStore` 与 `SessionStore`。
 
 这意味着我们当前正处于：
 
@@ -299,7 +301,7 @@ control-plane / replay / monitor / UI
 - 扩展成“多轮记录”
 - 再扩展成“有 session 容器的运行记录系统”
 
-后面如果继续演进到 canonical snapshot / runtime manager，就会顺很多。
+后面如果继续演进到 canonical snapshot / runtime control-plane，就会顺很多。
 - 不要一上来就做复杂 session schema
 - 不要一上来就做控制平面
 

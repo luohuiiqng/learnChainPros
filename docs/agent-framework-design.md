@@ -354,8 +354,10 @@
 7. `BaseWorkflow`、`SequentialWorkflow`、`BaseExecutor` 与 `AgentExecutor` 已落地，最小工作流执行链路已跑通。
 8. Workflow 已支持最小的步骤结果传递能力，后一步可消费前一步输出。
 9. `RuntimeSession` 已落地，并接入 `ChatAgent`，可记录单轮输入、规划结果、`workflow_trace`、工具/模型调用、最终输出与错误摘要。
-10. `BaseTranscriptStore`、`InMemoryTranscriptStore` 已落地，`ChatAgent` 已可在每轮运行结束后追加统一结构的 `agent_run` 记录。
-11. `BaseSessionStore`、`InMemorySessionStore` 已落地，`ChatAgent` 已可在 transcript 写入前确保 session 存在。
+10. `TranscriptEntry` 已落地，Transcript 记录已从约定 dict 收敛为明确的数据对象。
+11. `BaseTranscriptStore`、`InMemoryTranscriptStore` 已落地，`ChatAgent` 已可在每轮运行结束后追加统一结构的 `agent` 记录。
+12. `BaseSessionStore`、`InMemorySessionStore` 已落地，`ChatAgent` 已可在 transcript 写入前确保 session 存在。
+13. `RuntimeManager` 已落地，并开始统一协调 `RuntimeSession`、`TranscriptEntry`、`TranscriptStore` 与 `SessionStore`。
 
 当前阶段应统一定义为：
 
@@ -369,9 +371,10 @@
 4. `RuntimeSession` 作为最小 runtime 观测对象稳定接入主链。
 5. `TranscriptStore` 作为多轮运行记录层稳定接入主链。
 6. `SessionStore` 作为 session 元信息层稳定接入主链。
-7. 为未来的 canonical runtime snapshot 设计预留空间。
-8. `ChatAgent`、`Planner`、`Workflow`、`Executor`、`SessionStore` 与 `TranscriptStore` 的职责边界持续收清。
-9. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+7. `RuntimeManager` 作为 runtime 协调层开始从 `ChatAgent` 中接管会话与 transcript 记录链。
+8. 为未来的 canonical runtime snapshot 设计预留空间。
+9. `ChatAgent`、`Planner`、`Workflow`、`Executor`、`RuntimeManager`、`SessionStore` 与 `TranscriptStore` 的职责边界持续收清。
+10. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
 
 补充说明：
 

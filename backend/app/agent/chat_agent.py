@@ -15,20 +15,18 @@ from app.planners.base_planner import BasePlanner
 from app.runtime.runtime_session import RuntimeSession
 from app.workflows.sequential_workflow import SequentialWorkflow
 from app.workflows.agent_executor import AgentExecutor
-from app.runtime.base_transcript_store import BaseTranscriptStore
-from app.runtime.base_session_store import BaseSessionStore
-from app.runtime.transcript_entry import TranscriptEntry
+from app.runtime.runtime_manager import RuntimeManager
+
 
 class ChatAgent(BaseAgent):
     def __init__(
         self,
+        runtime_manager: RuntimeManager,
         model: BaseModel = None,
         tool_registry: ToolRegistry = None,
         memory: BaseMemory | None = None,
         prompt_builder: BasePrompt | None = None,
         planner: BasePlanner | None = None,
-        transcript_store: BaseTranscriptStore | None = None,
-        session_store: BaseSessionStore | None = None,
         **kwargs,
     ) -> None:
         super().__init__(model = model,**kwargs)
@@ -36,55 +34,8 @@ class ChatAgent(BaseAgent):
         self._memory = memory
         self._prompt_builder = prompt_builder if prompt_builder is not None else PromptBuilder()
         self._planner = planner
-        self._transcript_store = transcript_store
-        self._session_store = session_store
+        self._runtime_manager = runtime_manager
 
-    def _build_output_metadata(
-        self,
-        metadata: dict[str, Any] | None,
-        runtime_session: RuntimeSession,
-    ) -> dict[str, Any]:
-        merged_metadata = dict(metadata or {})
-        merged_metadata["runtime_session"] = runtime_session
-        return merged_metadata
-
-    def _build_transcript_entry(
-        self,
-        user_input: str,
-        agent_output: AgentOutput,
-        runtime_session: RuntimeSession,
-    ) -> TranscriptEntry:
-        return TranscriptEntry(
-            type="agent_run",
-            user_input=user_input,
-            final_output=runtime_session.final_output,
-            success=agent_output.success,
-            runtime_session=runtime_session,
-            timestamp=datetime.now().isoformat(),
-        )
-
-    def _append_transcript_entry(
-        self,
-        session_id: str | None,
-        user_input: str,
-        agent_output: AgentOutput,
-        runtime_session: RuntimeSession,
-    ) -> None:
-        if self._transcript_store is None or session_id is None:
-            return
-        self._transcript_store.append_entry(
-            session_id=session_id,
-            entry=self._build_transcript_entry(
-                user_input=user_input,
-                agent_output=agent_output,
-                runtime_session=runtime_session,
-            ),
-        )
-
-    def _ensure_session_exists(self, session_id: str | None) -> None:
-        if self._session_store is not None and session_id is not None:
-            if self._session_store.get_session(session_id) is None:
-                self._session_store.create_session(session_id, {"agent_type": "chat"})
 
     def _add_memory_message(
         self,
@@ -208,6 +159,15 @@ class ChatAgent(BaseAgent):
             ),
         )
 
+    def _build_output_metadata(
+        self,
+        metadata: dict[str, Any] | None,
+        runtime_session: RuntimeSession,
+    ) -> dict[str, Any]:
+        merged_metadata = dict(metadata or {})
+        merged_metadata["runtime_session"] = runtime_session
+        return merged_metadata
+
     def call_tool(self,tool_name:str,tool_input:ToolInput)->ToolOutput:
         if self._tool_registry is None:
             return ToolOutput(content= None,error_message="tool registry is not configured",success=False)
@@ -244,7 +204,8 @@ class ChatAgent(BaseAgent):
             ), prompt_text
 
     def act(self,input_data:AgentInput,plan:Any = None)->AgentOutput:
-        runtime_session = RuntimeSession(
+
+        runtime_session = self._runtime_manager.create_runtime_session(
             session_id=input_data.session_id, user_input=input_data.message
         )
         self._add_memory_message(
@@ -261,12 +222,16 @@ class ChatAgent(BaseAgent):
                         plan,
                         runtime_session,
                     )
-                    self._ensure_session_exists(input_data.session_id)
-                    self._append_transcript_entry(
+                    self._runtime_manager.ensure_session_exists(input_data.session_id)
+                    self._runtime_manager.append_transcript_entry(
                         session_id=input_data.session_id,
-                        user_input=input_data.message,
-                        agent_output=agent_output,
-                        runtime_session=runtime_session,
+                        transcript_entry=self._runtime_manager.build_transcript_entry(
+                            type="agent",
+                            runtime_session=runtime_session,
+                            user_input=input_data.message,
+                            final_output=agent_output.content,
+                            success=agent_output.success,
+                        ),
                     )
                     return agent_output
                 elif plan.get("action") == "tool":
@@ -299,12 +264,18 @@ class ChatAgent(BaseAgent):
                                 runtime_session,
                             ),
                         )
-                        self._ensure_session_exists(input_data.session_id)
-                        self._append_transcript_entry(
+                        self._runtime_manager.ensure_session_exists(
+                            input_data.session_id
+                        )
+                        self._runtime_manager.append_transcript_entry(
                             session_id=input_data.session_id,
-                            user_input=input_data.message,
-                            agent_output=agent_output,
-                            runtime_session=runtime_session,
+                            transcript_entry=self._runtime_manager.build_transcript_entry(
+                                type="agent",
+                                runtime_session=runtime_session,
+                                user_input=input_data.message,
+                                final_output=agent_output.content,
+                                success=agent_output.success,
+                            ),
                         )
                         return agent_output
                     else:
@@ -314,12 +285,18 @@ class ChatAgent(BaseAgent):
                             prompt_text,
                             runtime_session,
                         )
-                        self._ensure_session_exists(input_data.session_id)
-                        self._append_transcript_entry(
+                        self._runtime_manager.ensure_session_exists(
+                            input_data.session_id
+                        )
+                        self._runtime_manager.append_transcript_entry(
                             session_id=input_data.session_id,
-                            user_input=input_data.message,
-                            agent_output=agent_output,
-                            runtime_session=runtime_session,
+                            transcript_entry=self._runtime_manager.build_transcript_entry(
+                                type="agent",
+                                runtime_session=runtime_session,
+                                user_input=input_data.message,
+                                final_output=agent_output.content,
+                                success=agent_output.success,
+                            ),
                         )
                         return agent_output
 
@@ -330,12 +307,16 @@ class ChatAgent(BaseAgent):
                         prompt_text,
                         runtime_session,
                     )
-                    self._ensure_session_exists(input_data.session_id)
-                    self._append_transcript_entry(
+                    self._runtime_manager.ensure_session_exists(input_data.session_id)
+                    self._runtime_manager.append_transcript_entry(
                         session_id=input_data.session_id,
-                        user_input=input_data.message,
-                        agent_output=agent_output,
-                        runtime_session=runtime_session,
+                        transcript_entry=self._runtime_manager.build_transcript_entry(
+                            type="agent",
+                            runtime_session=runtime_session,
+                            user_input=input_data.message,
+                            final_output=agent_output.content,
+                            success=agent_output.success,
+                        ),
                     )
                     return agent_output
 
@@ -346,12 +327,16 @@ class ChatAgent(BaseAgent):
                     prompt_text,
                     runtime_session,
                 )
-                self._ensure_session_exists(input_data.session_id)
-                self._append_transcript_entry(
+                self._runtime_manager.ensure_session_exists(input_data.session_id)
+                self._runtime_manager.append_transcript_entry(
                     session_id=input_data.session_id,
-                    user_input=input_data.message,
-                    agent_output=agent_output,
-                    runtime_session=runtime_session,
+                    transcript_entry=self._runtime_manager.build_transcript_entry(
+                        type="agent",
+                        runtime_session=runtime_session,
+                        user_input=input_data.message,
+                        final_output=agent_output.content,
+                        success=agent_output.success,
+                    ),
                 )
                 return agent_output
         else:
@@ -361,11 +346,15 @@ class ChatAgent(BaseAgent):
                 prompt_text,
                 runtime_session,
             )
-            self._ensure_session_exists(input_data.session_id)
-            self._append_transcript_entry(
+            self._runtime_manager.ensure_session_exists(input_data.session_id)
+            self._runtime_manager.append_transcript_entry(
                 session_id=input_data.session_id,
-                user_input=input_data.message,
-                agent_output=agent_output,
-                runtime_session=runtime_session,
+                transcript_entry=self._runtime_manager.build_transcript_entry(
+                    type="agent",
+                    runtime_session=runtime_session,
+                    user_input=input_data.message,
+                    final_output=agent_output.content,
+                    success=agent_output.success,
+                ),
             )
             return agent_output
