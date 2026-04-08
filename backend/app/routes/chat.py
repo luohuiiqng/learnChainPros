@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.chat_input_output import ChatRequest, ChatResponse
-from app.services.chat_service import ensure_session_id, request_chat_agent
+from app.services.chat_service import chat_service
 
 
 
@@ -26,16 +26,18 @@ def chat(payload: ChatRequest) -> ChatResponse:
             status_code=400,
             detail={"error": {"code": "BAD_REQUEST", "message": "message长度不能超过2000"}},
         )
-    agent_output = request_chat_agent(message=message, session_id=payload.session_id)
+    agent_output, session_id = chat_service.chat(
+        message=message, session_id=payload.session_id
+    )
     if not agent_output.success:
         return ChatResponse(
-        reply=agent_output.error_message,
-        session_id=ensure_session_id(payload.session_id),
-        timestamp=datetime.now(timezone.utc),
-    )
+            reply=agent_output.error_message,
+            session_id=session_id,
+            timestamp=datetime.now(timezone.utc),
+        )
     return ChatResponse(
         reply=agent_output.content,
-        session_id=ensure_session_id(payload.session_id),
+        session_id=session_id,
         timestamp=datetime.now(timezone.utc),
     )
 

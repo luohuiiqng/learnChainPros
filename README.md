@@ -501,6 +501,11 @@ docker run -d \
 - `--restart unless-stopped`
   职责：服务器重启后自动恢复容器
 
+### 7.进入docker容器
+```bash
+docker exec -it <容器ID或名称> /bin/bash
+```
+
 ### 7. 验证后端容器
 
 查看日志：
@@ -508,6 +513,8 @@ docker run -d \
 ```bash
 docker logs learnchainpros-backend
 ```
+
+
 
 健康检查：
 
