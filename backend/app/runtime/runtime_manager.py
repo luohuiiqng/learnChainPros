@@ -19,7 +19,7 @@ class RuntimeManager:
 
     def create_runtime_session(
         self,
-        session_id: str | None,
+        session_id: str,
         user_input: str,
     ) -> RuntimeSession:
         runtime_session = RuntimeSession(
@@ -28,8 +28,8 @@ class RuntimeManager:
         )
         return runtime_session
 
-    def ensure_session_exists(self, session_id: str | None) -> None:
-        if session_id is None:
+    def ensure_session_exists(self, session_id: str) -> None:
+        if not session_id:
             return
         if self._session_store.get_session(session_id=session_id) is None:
             self._session_store.create_session(session_id=session_id, metadata={})
@@ -55,10 +55,10 @@ class RuntimeManager:
 
     def append_transcript_entry(
         self,
-        session_id: str | None,
+        session_id: str,
         transcript_entry: TranscriptEntry,
     ) -> None:
-        if session_id is None:
+        if not session_id:
             return
 
         self._transcript_store.append_entry(

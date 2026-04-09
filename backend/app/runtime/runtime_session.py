@@ -7,7 +7,7 @@ from datetime import datetime
 class RuntimeSession:
     """一次运行过程中的核心聚合快照"""
 
-    session_id: str | None = None
+    session_id: str = ""
     user_input: str = ""
     planner_result: dict[str, Any] | None = None
     workflow_result: dict[str, Any] | None = None
@@ -61,3 +61,16 @@ class RuntimeSession:
         )
     def add_error(self, error_message: str) -> None:
         self.errors.append(error_message)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "user_input": self.user_input,
+            "planner_result": self.planner_result,
+            "workflow_result": self.workflow_result,
+            "tool_calls": self.tool_calls,
+            "model_calls": self.model_calls,
+            "workflow_trace": self.workflow_trace,
+            "final_output": self.final_output,
+            "errors": self.errors,
+        }

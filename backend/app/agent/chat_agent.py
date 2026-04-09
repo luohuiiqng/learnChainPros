@@ -39,11 +39,11 @@ class ChatAgent(BaseAgent):
 
     def _add_memory_message(
         self,
-        session_id: str | None,
+        session_id: str,
         role: str,
         content: str,
     ) -> None:
-        if self._memory is None or session_id is None:
+        if self._memory is None or not session_id:
             return
         self._memory.add_message(
             session_id,
@@ -177,7 +177,7 @@ class ChatAgent(BaseAgent):
         return ToolOutput(content= None,error_message=f"tool not found: {tool_name}",success=False)
 
     def call_model(self, input_data: AgentInput) -> tuple[AgentOutput, str | None]:
-        if self._memory is not None and input_data.session_id is not None:
+        if self._memory is not None and input_data.session_id:
             prompt_text = self._prompt_builder.build_prompt(messages=self._memory.get_messages(input_data.session_id))
             model_request = ModelRequest(prompt = prompt_text)
             model_response = self._model.generate(model_request)

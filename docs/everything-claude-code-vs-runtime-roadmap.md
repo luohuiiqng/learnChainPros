@@ -380,6 +380,7 @@ control-plane / replay / monitor / UI
 2. 提供持久化版 `TranscriptStore`。
 3. 第一版优先 SQLite 或文件落盘，不急着做复杂数据库设计。
 4. 让 session / transcript 能跨进程与重启保留。
+5. 当前可先接受“SQLite store 作为 runtime 层另一种实现”的形态，不必过早引入 ORM、repository 或独立 database 层。
 
 ### 第五阶段：把记录层做成可视化与可调试能力
 

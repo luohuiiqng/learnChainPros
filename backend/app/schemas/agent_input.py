@@ -6,6 +6,6 @@ from typing import Any
 class AgentInput:
     """agent的统一输入对象"""
     message: str
-    session_id: str | None = None
+    session_id: str = ""
     user_id: str | None = None
     metadata: dict[str,Any] = field(default_factory=dict)

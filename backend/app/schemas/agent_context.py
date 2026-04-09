@@ -10,7 +10,7 @@ class AgentContext:
     state:保存agent运行过程中的临时状态信息
     metadata:保存额外上下文参数，为后续扩展预留接口
     """
-    session_id: str | None = None
+    session_id: str = ""
     user_id: str | None = None
     state: dict[str,Any] = field(default_factory = dict)
     metadata: dict[str,Any] = field(default_factory = dict)

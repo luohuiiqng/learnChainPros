@@ -410,6 +410,7 @@
    职责：让 `RuntimeSession / TranscriptEntry` 提供稳定、可序列化的对外结构。
 4. 持久化 Store
    职责：把当前内存版记录层逐步推进到可落盘、可重启恢复的实现。
+   当前进展：SQLite 版 `PersistentSessionStore` 与 `PersistentTranscriptStore` 已进入第一版实现与测试阶段，当前重点是先守住接口兼容、最小读写闭环与后续替换能力。
 5. 可视化与调试能力
    职责：让 session、transcript、runtime snapshot 记录真正可被查看、分析与调试。
 
