@@ -412,6 +412,7 @@
    职责：把当前内存版记录层逐步推进到可落盘、可重启恢复的实现。
    当前进展：SQLite 版 `PersistentSessionStore` 与 `PersistentTranscriptStore` 已进入第一版实现与测试阶段，当前重点是先守住接口兼容、最小读写闭环与后续替换能力。
    补充进展：`AgentFactory` 已支持 memory/sqlite store 切换，`ChatService` 默认实例也已开始从配置来源读取 `STORE_BACKEND / RUNTIME_DB_PATH`，sqlite 模式下的最小 service 级集成验证已经跑通。
+   进一步进展：sqlite 模式下已经验证可跨 `ChatService` 实例恢复 session 与 transcript，说明当前持久化链已不只是“同实例可读”，而是具备最小重建恢复能力。
 6. 配置收口
    职责：把分散在 service/factory 中的环境变量读取逻辑统一收口到 `Settings`，形成清晰的配置入口。
 5. 可视化与调试能力

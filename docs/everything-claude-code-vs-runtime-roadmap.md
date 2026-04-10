@@ -383,6 +383,7 @@ control-plane / replay / monitor / UI
 5. 当前可先接受“SQLite store 作为 runtime 层另一种实现”的形态，不必过早引入 ORM、repository 或独立 database 层。
 6. 当前阶段还应优先验证：默认应用实例能否通过配置切到 sqlite，以及 sqlite 模式下最小 chat -> session/transcript 查询闭环是否成立。
 7. 随着配置项增加，应把 `STORE_BACKEND / RUNTIME_DB_PATH / OPENAI_*` 等读取逻辑收口到统一 `Settings`，避免 service/factory 各自读取环境变量。
+8. 在进入更重的 route/UI 验证前，应先确认 sqlite 数据能跨 service 实例保留；这条最小恢复验证当前已成立。
 
 ### 第五阶段：把记录层做成可视化与可调试能力
 
