@@ -13,16 +13,28 @@ from app.tools.tool_registry import ToolRegistry
 from app.tools.tool_router import ToolRouter
 from app.runtime.base_session_store import BaseSessionStore
 from app.runtime.base_transcript_store import BaseTranscriptStore
+from app.runtime.persistent_session_store import PersistentSessionStore
+from app.runtime.persistent_transcript_store import PersistentTranscriptStore
 
 
 class AgentFactory:
     """应用层组装根，负责创建 ChatAgent 及其依赖。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, store_backend: str = "memory", db_path: str | None = None
+    ) -> None:
+        if store_backend == "memory":
+            self._session_store = InMemorySessionStore()
+            self._transcript_store = InMemoryTranscriptStore()
+        elif store_backend == "sqlite":
+            if db_path is None:
+                raise ValueError("sqlite backend requires db_path...")
+            self._session_store = PersistentSessionStore(db_path=db_path)
+            self._transcript_store = PersistentTranscriptStore(db_path=db_path)
+        else:
+            raise ValueError(f"unsupported store_backend: {store_backend}")
         self._memory = InMemoryMemory()
         self._prompt_builder = PromptBuilder()
-        self._session_store = InMemorySessionStore()
-        self._transcript_store = InMemoryTranscriptStore()
         self._runtime_manager = RuntimeManager(
             session_store=self._session_store,
             transcript_store=self._transcript_store,

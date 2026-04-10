@@ -381,6 +381,7 @@ control-plane / replay / monitor / UI
 3. 第一版优先 SQLite 或文件落盘，不急着做复杂数据库设计。
 4. 让 session / transcript 能跨进程与重启保留。
 5. 当前可先接受“SQLite store 作为 runtime 层另一种实现”的形态，不必过早引入 ORM、repository 或独立 database 层。
+6. 当前阶段还应优先验证：默认应用实例能否通过配置切到 sqlite，以及 sqlite 模式下最小 chat -> session/transcript 查询闭环是否成立。
 
 ### 第五阶段：把记录层做成可视化与可调试能力
 

@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 from app.schemas.agent_input import AgentInput
 from app.schemas.agent_output import AgentOutput
@@ -11,8 +12,15 @@ def ensure_session_id(session_id: str | None) -> str:
 
 
 class ChatService:
-    def __init__(self, agent_factory: AgentFactory | None = None) -> None:
-        self._agent_factory = agent_factory or AgentFactory()
+    def __init__(
+        self,
+        agent_factory: AgentFactory | None = None,
+        store_backend: str = "memory",
+        db_path: str | None = None,
+    ) -> None:
+        self._agent_factory = agent_factory or AgentFactory(
+            store_backend=store_backend, db_path=db_path
+        )
         self._agent = self._agent_factory.create_chat_agent()
         self._session_store = self._agent_factory.get_session_store()
         self._transcript_store = self._agent_factory.get_transcript_store()
@@ -37,5 +45,6 @@ class ChatService:
             TranscriptEntryResponse.from_transcript_entry(entry) for entry in entries
         ]
 
-
-chat_service = ChatService()
+store_backend = os.getenv("STORE_BACKEND", "memory")
+runtime_db_path = os.getenv("RUNTIME_DB_PATH", "/tmp/runtime.db")
+chat_service = ChatService(store_backend=store_backend, db_path=runtime_db_path)
