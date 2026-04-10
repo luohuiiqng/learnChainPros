@@ -5,6 +5,7 @@ import tempfile
 import types
 
 from app.agent.chat_agent import ChatAgent
+from app.config.settings import Settings
 from app.planners.rule_planner import RulePlanner
 from app.runtime.in_memory_session_store import InMemorySessionStore
 from app.runtime.in_memory_transcript_store import InMemoryTranscriptStore
@@ -31,8 +32,17 @@ agent_factory_module = importlib.reload(agent_factory_module)
 
 AgentFactory = agent_factory_module.AgentFactory
 
+settings = Settings(
+    openai_api_key="test-api-key",
+    openai_model="test-model",
+    openai_base_url="https://example.com/v1",
+    openai_organization=None,
+    store_backend="memory",
+    runtime_db_path=None,
+)
+
 factory = AgentFactory()
-agent = factory.create_chat_agent()
+agent = factory.create_chat_agent(settings=settings)
 
 assert isinstance(agent, ChatAgent)
 assert agent._runtime_manager is not None

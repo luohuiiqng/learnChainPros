@@ -1,10 +1,10 @@
-import os
 from uuid import uuid4
 from app.schemas.agent_input import AgentInput
 from app.schemas.agent_output import AgentOutput
 from app.services.agent_factory import AgentFactory
 from app.schemas.transcript_response import TranscriptEntryResponse
 from app.schemas.session_response import SessionResponse
+from app.config.settings import Settings
 
 
 def ensure_session_id(session_id: str | None) -> str:
@@ -14,14 +14,15 @@ def ensure_session_id(session_id: str | None) -> str:
 class ChatService:
     def __init__(
         self,
+        settings: Settings,
         agent_factory: AgentFactory | None = None,
-        store_backend: str = "memory",
-        db_path: str | None = None,
     ) -> None:
+        self._settings = settings or Settings.from_env()
         self._agent_factory = agent_factory or AgentFactory(
-            store_backend=store_backend, db_path=db_path
+            store_backend=self._settings.store_backend,
+            db_path=self._settings.runtime_db_path,
         )
-        self._agent = self._agent_factory.create_chat_agent()
+        self._agent = self._agent_factory.create_chat_agent(settings=self._settings)
         self._session_store = self._agent_factory.get_session_store()
         self._transcript_store = self._agent_factory.get_transcript_store()
 
@@ -45,6 +46,5 @@ class ChatService:
             TranscriptEntryResponse.from_transcript_entry(entry) for entry in entries
         ]
 
-store_backend = os.getenv("STORE_BACKEND", "memory")
-runtime_db_path = os.getenv("RUNTIME_DB_PATH", "/tmp/runtime.db")
-chat_service = ChatService(store_backend=store_backend, db_path=runtime_db_path)
+settings = Settings.from_env()
+chat_service = ChatService(settings=settings)

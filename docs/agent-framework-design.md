@@ -412,6 +412,8 @@
    职责：把当前内存版记录层逐步推进到可落盘、可重启恢复的实现。
    当前进展：SQLite 版 `PersistentSessionStore` 与 `PersistentTranscriptStore` 已进入第一版实现与测试阶段，当前重点是先守住接口兼容、最小读写闭环与后续替换能力。
    补充进展：`AgentFactory` 已支持 memory/sqlite store 切换，`ChatService` 默认实例也已开始从配置来源读取 `STORE_BACKEND / RUNTIME_DB_PATH`，sqlite 模式下的最小 service 级集成验证已经跑通。
+6. 配置收口
+   职责：把分散在 service/factory 中的环境变量读取逻辑统一收口到 `Settings`，形成清晰的配置入口。
 5. 可视化与调试能力
    职责：让 session、transcript、runtime snapshot 记录真正可被查看、分析与调试。
 
@@ -447,9 +449,11 @@ route
 3. `AgentFactory`
    职责：负责组装 `ChatAgent` 及其依赖，是应用层组装根，而不是 Agent 框架内核的一部分。
    当前进展：已支持根据配置在 `InMemory*Store` 与 SQLite 持久化 store 之间切换。
-4. `ChatAgent`
+4. `Settings`
+   职责：负责统一承载应用启动配置，并把模型配置、store backend 与 runtime db 路径向下传递给 `ChatService` 和 `AgentFactory`。
+5. `ChatAgent`
    职责：负责单轮推理主链执行，不再承担应用层组装职责。
-5. `RuntimeManager`
+6. `RuntimeManager`
    职责：负责 runtime 记录链路协调，不直接承担 HTTP 或业务入口职责。
 
 后续如果继续扩展，不应让 `route` 和 `ChatService` 直接感知过多底层实现细节，而应继续通过组装根把依赖关系收口。

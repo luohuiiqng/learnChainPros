@@ -15,6 +15,7 @@ from app.runtime.base_session_store import BaseSessionStore
 from app.runtime.base_transcript_store import BaseTranscriptStore
 from app.runtime.persistent_session_store import PersistentSessionStore
 from app.runtime.persistent_transcript_store import PersistentTranscriptStore
+from app.config.settings import Settings
 
 
 class AgentFactory:
@@ -40,11 +41,11 @@ class AgentFactory:
             transcript_store=self._transcript_store,
         )
 
-    def create_chat_agent(self) -> ChatAgent:
-        api_key = os.getenv("OPENAI_API_KEY")
-        model_name = os.getenv("OPENAI_MODEL", "gpt-5.4")
-        base_url = os.getenv("OPENAI_BASE_URL")
-        organization = os.getenv("OPENAI_ORGANIZATION")
+    def create_chat_agent(self, settings: Settings) -> ChatAgent:
+        api_key = settings.openai_api_key
+        model_name = settings.openai_model
+        base_url = settings.openai_base_url
+        organization = settings.openai_organization
 
         model = OpenAIModel(
             model_name=model_name,
