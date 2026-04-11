@@ -491,7 +491,7 @@ docker run -d \
 ```
 ### 停止容器：
 ```bash
-`docker stop learnchainpros-backend
+docker stop learnchainpros-backend
 ```
 
 说明：

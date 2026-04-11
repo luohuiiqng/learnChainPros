@@ -1,5 +1,6 @@
-import sqlite3
 import json
+import os
+import sqlite3
 from app.runtime.runtime_session import RuntimeSession
 from app.runtime.base_transcript_store import BaseTranscriptStore
 from app.runtime.transcript_entry import TranscriptEntry
@@ -9,12 +10,20 @@ class PersistentTranscriptStore(BaseTranscriptStore):
     """把transcript记录持久保存下来的store"""
 
     def __init__(self, db_path: str) -> None:
-        self._conn = sqlite3.connect(db_path)
+        self._ensure_parent_dir(db_path)
+        # FastAPI sync endpoints run inside AnyIO worker threads, so sqlite
+        # access must not be bound to the startup thread only.
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_table()
 
+    def _ensure_parent_dir(self, db_path: str) -> None:
+        parent_dir = os.path.dirname(db_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+
     def _init_table(self) -> None:
-        self._cursor = self._conn.cursor()
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             """
         CREATE TABLE IF NOT EXISTS transcript (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,7 +40,8 @@ class PersistentTranscriptStore(BaseTranscriptStore):
         self._conn.commit()
 
     def append_entry(self, session_id: str, entry: TranscriptEntry) -> None:
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             """
             INSERT INTO transcript (session_id, type, user_input, final_output,success,timestamp,runtime_session_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -49,7 +59,8 @@ class PersistentTranscriptStore(BaseTranscriptStore):
         self._conn.commit()
 
     def get_entries(self, session_id: str) -> list[TranscriptEntry]:
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             """
         SELECT type, user_input, final_output, success, timestamp, runtime_session_json
         FROM transcript
@@ -58,7 +69,7 @@ class PersistentTranscriptStore(BaseTranscriptStore):
         """,
             (session_id,),
         )
-        rows = self._cursor.fetchall()
+        rows = cursor.fetchall()
         entries: list[TranscriptEntry] = []
         for row in rows:
             runtime_session_data = json.loads(row[5])
@@ -88,7 +99,8 @@ class PersistentTranscriptStore(BaseTranscriptStore):
         return entries
 
     def clear(self, session_id: str) -> None:
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             "DELETE FROM transcript WHERE session_id = ?",
             (session_id,),
         )

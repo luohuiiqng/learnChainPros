@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 
 import MessageInput from "./MessageInput.vue";
 import MessageList from "./MessageList.vue";
+import SessionSidebar from "./SessionSidebar.vue";
 import { sendChatMessage } from "../services/chatApi";
 import type { ChatMessage } from "../types/chat";
 
@@ -27,7 +28,13 @@ const messages = ref<ChatMessage[]>([
 const loading = ref(false);
 const errorText = ref("");
 const sessionId = ref<string | undefined>(undefined);
+const inspectSessionId = ref<string | undefined>(undefined);
+const inspectorRefreshKey = ref(0);
 const listWrapper = ref<HTMLElement | null>(null);
+
+const emit = defineEmits<{
+  openSessionDetail: [sessionId: string];
+}>();
 
 // Centralized append function keeps message structure consistent.
 function appendMessage(role: ChatMessage["role"], content: string, timestamp = new Date().toISOString()) {
@@ -67,6 +74,8 @@ async function handleSend(text: string) {
   try {
     const result = await sendChatMessage({ message: text, session_id: sessionId.value });
     sessionId.value = result.session_id;
+    inspectSessionId.value = result.session_id;
+    inspectorRefreshKey.value += 1;
     appendMessage("assistant", result.reply, result.timestamp);
   } catch (error) {
     const message = error instanceof Error ? error.message : "网络连接失败，请稍后重试";
@@ -76,64 +85,138 @@ async function handleSend(text: string) {
     await scrollToBottom();
   }
 }
+
+function handleSessionSelected(selectedSessionId: string) {
+  inspectSessionId.value = selectedSessionId;
+  emit("openSessionDetail", selectedSessionId);
+}
+
+onMounted(() => {
+  inspectorRefreshKey.value += 1;
+});
 </script>
 
 <template>
   <main class="chat-shell">
-    <section class="chat-panel">
-      <header class="chat-header">
-        <h1>LearnChain Chat</h1>
-        <p>阶段1：文本对话 MVP</p>
-      </header>
+    <section class="workspace">
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="chat-eyebrow">LearnChain Studio</p>
+            <h1>Agent Playground</h1>
+            <p class="chat-subtitle">一边对话，一边查看 session 与 transcript 的真实运行轨迹。</p>
+          </div>
+          <div class="chat-badge">
+            <span>当前会话</span>
+            <strong>{{ sessionId ? sessionId.slice(0, 8) : "尚未创建" }}</strong>
+          </div>
+        </header>
 
-      <div ref="listWrapper" class="chat-history">
-        <MessageList :messages="messages" />
-      </div>
+        <div ref="listWrapper" class="chat-history">
+          <MessageList :messages="messages" />
+        </div>
 
-      <p v-if="errorText" class="error-banner">{{ errorText }}</p>
+        <p v-if="errorText" class="error-banner">{{ errorText }}</p>
 
-      <MessageInput :loading="loading" @submit="handleSend" />
+        <MessageInput :loading="loading" @submit="handleSend" />
+      </section>
+
+      <SessionSidebar
+        :active-session-id="inspectSessionId"
+        :refresh-key="inspectorRefreshKey"
+        @open-session-detail="handleSessionSelected"
+      />
     </section>
   </main>
 </template>
 
 <style scoped>
 .chat-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
+  height: 100vh;
   padding: 24px;
-  background: radial-gradient(circle at top left, #fef3c7, #e0f2fe 60%, #f8fafc);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(251, 191, 36, 0.3), transparent 26%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.22), transparent 30%),
+    linear-gradient(180deg, #fffaf1, #f6fbff 55%, #f8fafc);
+}
+
+.workspace {
+  width: min(1400px, 100%);
+  height: calc(100vh - 48px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 460px);
+  gap: 20px;
+  align-items: stretch;
 }
 
 .chat-panel {
-  width: min(900px, 100%);
   display: grid;
   grid-template-rows: auto 1fr auto auto;
   gap: 14px;
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(8px);
-  border-radius: 20px;
-  padding: 16px;
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(14px);
+  border-radius: 28px;
+  padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 15px 40px rgba(15, 23, 42, 0.15);
-  min-height: 78vh;
+  box-shadow: 0 25px 55px rgba(15, 23, 42, 0.12);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.chat-eyebrow {
+  margin: 0 0 8px;
+  color: #b45309;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
 }
 
 .chat-header h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 32px;
   color: #0f172a;
 }
 
-.chat-header p {
-  margin: 6px 0 0;
+.chat-subtitle {
+  margin: 10px 0 0;
   color: #475569;
+  max-width: 56ch;
+}
+
+.chat-badge {
+  align-self: flex-start;
+  display: grid;
+  gap: 6px;
+  min-width: 140px;
+  padding: 12px 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(194, 65, 12, 0.12), rgba(15, 118, 110, 0.12));
+  color: #7c2d12;
+  font-size: 12px;
+}
+
+.chat-badge strong {
+  color: #0f172a;
+  font-size: 15px;
 }
 
 .chat-history {
   overflow: auto;
+  min-height: 0;
   padding-right: 4px;
+  border-radius: 22px;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(226, 232, 240, 0.7);
 }
 
 .error-banner {
@@ -146,20 +229,42 @@ async function handleSend(text: string) {
   font-size: 14px;
 }
 
+@media (max-width: 1080px) {
+  .chat-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .chat-panel {
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 768px) {
   .chat-shell {
     padding: 10px;
   }
 
   .chat-panel {
-    min-height: 90vh;
-    border-radius: 14px;
+    min-height: auto;
+    border-radius: 20px;
     padding: 12px;
   }
 
+  .chat-header {
+    flex-direction: column;
+  }
+
   .chat-header h1 {
-    font-size: 22px;
+    font-size: 26px;
   }
 }
 </style>
-

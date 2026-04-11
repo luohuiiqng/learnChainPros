@@ -1,5 +1,6 @@
-import sqlite3
 import json
+import os
+import sqlite3
 from typing import Any
 from datetime import datetime
 from app.runtime.base_session_store import BaseSessionStore
@@ -9,12 +10,20 @@ class PersistentSessionStore(BaseSessionStore):
     """把session元信息持久保持现在的store"""
 
     def __init__(self, db_path: str) -> None:
-        self._conn = sqlite3.connect(db_path)
+        self._ensure_parent_dir(db_path)
+        # FastAPI sync endpoints run in a threadpool, so the persistent store
+        # must tolerate access from worker threads after startup initialization.
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_table()
 
+    def _ensure_parent_dir(self, db_path: str) -> None:
+        parent_dir = os.path.dirname(db_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+
     def _init_table(self) -> None:
-        self._cursor = self._conn.cursor()
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             """
         CREATE TABLE IF NOT EXISTS sessions (
             session_id TEXT PRIMARY KEY,
@@ -32,7 +41,8 @@ class PersistentSessionStore(BaseSessionStore):
         metadata: dict[str, Any] | None = None,
     ) -> None:
         now = datetime.now().isoformat()
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             """
             INSERT INTO sessions (session_id, created_at, updated_at, metadata_json)
             VALUES (?, ?, ?, ?)
@@ -42,11 +52,12 @@ class PersistentSessionStore(BaseSessionStore):
         self._conn.commit()
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             "SELECT session_id, created_at, updated_at, metadata_json FROM sessions WHERE session_id = ?",
             (session_id,),
         )
-        row = self._cursor.fetchone()
+        row = cursor.fetchone()
         if row is None:
             return None
         return {
@@ -57,10 +68,11 @@ class PersistentSessionStore(BaseSessionStore):
         }
 
     def list_sessions(self) -> list[dict[str, Any]]:
-        self._cursor.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             "SELECT session_id, created_at, updated_at, metadata_json FROM sessions"
         )
-        rows = self._cursor.fetchall()
+        rows = cursor.fetchall()
         return [
             {
                 "session_id": row[0],
