@@ -2,6 +2,9 @@ from app.agent.chat_agent import ChatAgent
 from app.memory.in_memory_memory import InMemoryMemory
 from app.models.mock_model import MockModel
 from app.planners.rule_planner import RulePlanner
+from app.runtime.in_memory_session_store import InMemorySessionStore
+from app.runtime.in_memory_transcript_store import InMemoryTranscriptStore
+from app.runtime.runtime_manager import RuntimeManager
 from app.runtime.runtime_session import RuntimeSession
 from app.schemas.agent_input import AgentInput
 from app.schemas.agent_output import AgentOutput
@@ -21,8 +24,13 @@ memory = InMemoryMemory()
 
 tool_registry = ToolRegistry()
 tool_registry.register_tool(TimeTool())
+runtime_manager = RuntimeManager(
+    session_store=InMemorySessionStore(),
+    transcript_store=InMemoryTranscriptStore(),
+)
 
 chat_agent = ChatAgent(
+    runtime_manager=runtime_manager,
     model=model,
     tool_registry=tool_registry,
     memory=memory,
@@ -38,7 +46,13 @@ assert tool_output.success is True
 tool_runtime_session = tool_output.metadata.get("runtime_session")
 assert isinstance(tool_runtime_session, RuntimeSession)
 assert tool_runtime_session.user_input == "现在几点了？"
-assert tool_runtime_session.planner_result == {"action": "tool", "tool_name": "time_tool"}
+assert tool_runtime_session.planner_result["action"] == "tool"
+assert tool_runtime_session.planner_result["tool_name"] == "time_tool"
+assert tool_runtime_session.planner_result["reason"] == "命中工具路由规则"
+assert tool_runtime_session.workflow_trace[0]["step_name"] == "planner"
+assert tool_runtime_session.workflow_trace[0]["output"] == tool_runtime_session.planner_result
+assert tool_runtime_session.workflow_trace[0]["input_summary"] == "现在几点了？"
+assert tool_runtime_session.workflow_trace[0]["output_summary"] == "命中工具路由规则"
 assert len(tool_runtime_session.tool_calls) == 1
 assert tool_runtime_session.tool_calls[0]["tool_name"] == "time_tool"
 assert tool_runtime_session.tool_calls[0]["success"] is True
@@ -63,7 +77,12 @@ assert "mock response" in (model_output.content or "")
 model_runtime_session = model_output.metadata.get("runtime_session")
 assert isinstance(model_runtime_session, RuntimeSession)
 assert model_runtime_session.user_input == "你好"
-assert model_runtime_session.planner_result == {"action": "model"}
+assert model_runtime_session.planner_result["action"] == "model"
+assert model_runtime_session.planner_result["reason"] == "未命中workflow或tool规则，回退到模型"
+assert model_runtime_session.workflow_trace[0]["step_name"] == "planner"
+assert model_runtime_session.workflow_trace[0]["output"] == model_runtime_session.planner_result
+assert model_runtime_session.workflow_trace[0]["input_summary"] == "你好"
+assert model_runtime_session.workflow_trace[0]["output_summary"] == "未命中workflow或tool规则，回退到模型"
 assert model_runtime_session.tool_calls == []
 assert len(model_runtime_session.model_calls) == 1
 assert "你好" in model_runtime_session.model_calls[0]["prompt"]

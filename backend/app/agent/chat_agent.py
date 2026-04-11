@@ -98,14 +98,15 @@ class ChatAgent(BaseAgent):
             step_name = result.get("step_name", "unknown")
             for step in plan.get("steps", []):
                 if step.get("step_name", "unknown") == step_name:
-                    action = step.get("action", "unknown")
-
+                    action = result.get("action", step.get("action", "unknown"))
                     runtime_session.add_workflow_step_trace(
                         step_name=result.get("step_name", "unknown"),
                         action=action,
                         success=result.get("success", False),
                         output=result.get("output", ""),
                         error=result.get("error", None),
+                        input_summary=result.get("input_summary", ""),
+                        output_summary=result.get("output_summary", ""),
                     )
                     if action == "tool":
                         runtime_session.add_tool_call(
@@ -203,7 +204,28 @@ class ChatAgent(BaseAgent):
                 metadata=model_response.metadata,
             ), prompt_text
 
-    def act(self,input_data:AgentInput,plan:Any = None)->AgentOutput:
+    def _record_turn(
+        self,
+        session_id: str,
+        entry_type: str,
+        runtime_session: RuntimeSession,
+        user_input: str,
+        final_output: str,
+        success: bool,
+    ) -> None:
+        self._runtime_manager.ensure_session_exists(session_id)
+        self._runtime_manager.append_transcript_entry(
+            session_id=session_id,
+            transcript_entry=self._runtime_manager.build_transcript_entry(
+                type=entry_type,
+                runtime_session=runtime_session,
+                user_input=user_input,
+                final_output=final_output,
+                success=success,
+            ),
+        )
+
+    def act(self, input_data: AgentInput) -> AgentOutput:
 
         runtime_session = self._runtime_manager.create_runtime_session(
             session_id=input_data.session_id, user_input=input_data.message
@@ -216,90 +238,65 @@ class ChatAgent(BaseAgent):
         if self._planner is not None:
             plan = self._planner.plan(input_data)
             runtime_session.planner_result = plan
-            if plan is not None:
-                if plan.get("action") == "workflow":
-                    agent_output = self._run_workflow(
-                        plan,
-                        runtime_session,
+            runtime_session.add_workflow_step_trace(
+                step_name="planner",
+                action=plan.get("action", "unknown"),
+                success=True,
+                output=plan,
+                error=None,
+                input_summary=input_data.message,
+                output_summary=plan.get("reason", ""),
+            )
+            if plan.get("action") == "workflow":
+                agent_output = self._run_workflow(plan, runtime_session)
+                self._record_turn(
+                    input_data.session_id,
+                    entry_type="agent",
+                    runtime_session=runtime_session,
+                    user_input=input_data.message,
+                    final_output=agent_output.content,
+                    success=agent_output.success,
+                )
+                return agent_output
+            elif plan.get("action") == "tool":
+                tool_name = plan.get("tool_name")
+                if tool_name is not None:
+                    tool_output = self.call_tool(tool_name, ToolInput(params={}))
+                    runtime_session.add_tool_call(
+                        tool_name=tool_name,
+                        success=tool_output.success,
+                        output=tool_output.content,
+                        error=tool_output.error_message,
                     )
-                    self._runtime_manager.ensure_session_exists(input_data.session_id)
-                    self._runtime_manager.append_transcript_entry(
-                        session_id=input_data.session_id,
-                        transcript_entry=self._runtime_manager.build_transcript_entry(
-                            type="agent",
-                            runtime_session=runtime_session,
-                            user_input=input_data.message,
-                            final_output=agent_output.content,
-                            success=agent_output.success,
+                    self._add_memory_message(
+                        input_data.session_id,
+                        "assistant",
+                        tool_output.content or "",
+                    )
+                    runtime_session.final_output = tool_output.content or ""
+                    if not tool_output.success:
+                        runtime_session.add_error(
+                            f"tool call error: {tool_output.error_message}"
+                        )
+
+                    agent_output = AgentOutput(
+                        content=tool_output.content or "",
+                        success=tool_output.success,
+                        error_message=tool_output.error_message,
+                        metadata=self._build_output_metadata(
+                            tool_output.metadata,
+                            runtime_session,
                         ),
                     )
+                    self._record_turn(
+                        input_data.session_id,
+                        entry_type="agent",
+                        runtime_session=runtime_session,
+                        user_input=input_data.message,
+                        final_output=agent_output.content,
+                        success=agent_output.success,
+                    )
                     return agent_output
-                elif plan.get("action") == "tool":
-                    tool_name = plan.get("tool_name")
-                    if tool_name is not None:
-                        tool_output = self.call_tool(tool_name,ToolInput(params={}))
-                        runtime_session.add_tool_call(
-                            tool_name=tool_name,
-                            success=tool_output.success,
-                            output=tool_output.content,
-                            error=tool_output.error_message,
-                        )
-                        self._add_memory_message(
-                            input_data.session_id,
-                            "assistant",
-                            tool_output.content or "",
-                        )
-                        runtime_session.final_output = tool_output.content or ""
-                        if not tool_output.success:
-                            runtime_session.add_error(
-                                f"tool call error: {tool_output.error_message}"
-                            )
-
-                        agent_output = AgentOutput(
-                            content=tool_output.content or "",
-                            success=tool_output.success,
-                            error_message=tool_output.error_message,
-                            metadata=self._build_output_metadata(
-                                tool_output.metadata,
-                                runtime_session,
-                            ),
-                        )
-                        self._runtime_manager.ensure_session_exists(
-                            input_data.session_id
-                        )
-                        self._runtime_manager.append_transcript_entry(
-                            session_id=input_data.session_id,
-                            transcript_entry=self._runtime_manager.build_transcript_entry(
-                                type="agent",
-                                runtime_session=runtime_session,
-                                user_input=input_data.message,
-                                final_output=agent_output.content,
-                                success=agent_output.success,
-                            ),
-                        )
-                        return agent_output
-                    else:
-                        model_output, prompt_text = self.call_model(input_data)
-                        agent_output = self._finalize_model_output(
-                            model_output,
-                            prompt_text,
-                            runtime_session,
-                        )
-                        self._runtime_manager.ensure_session_exists(
-                            input_data.session_id
-                        )
-                        self._runtime_manager.append_transcript_entry(
-                            session_id=input_data.session_id,
-                            transcript_entry=self._runtime_manager.build_transcript_entry(
-                                type="agent",
-                                runtime_session=runtime_session,
-                                user_input=input_data.message,
-                                final_output=agent_output.content,
-                                success=agent_output.success,
-                            ),
-                        )
-                        return agent_output
-
                 else:
                     model_output, prompt_text = self.call_model(input_data)
                     agent_output = self._finalize_model_output(
@@ -307,16 +304,13 @@ class ChatAgent(BaseAgent):
                         prompt_text,
                         runtime_session,
                     )
-                    self._runtime_manager.ensure_session_exists(input_data.session_id)
-                    self._runtime_manager.append_transcript_entry(
-                        session_id=input_data.session_id,
-                        transcript_entry=self._runtime_manager.build_transcript_entry(
-                            type="agent",
-                            runtime_session=runtime_session,
-                            user_input=input_data.message,
-                            final_output=agent_output.content,
-                            success=agent_output.success,
-                        ),
+                    self._record_turn(
+                        input_data.session_id,
+                        entry_type="agent",
+                        runtime_session=runtime_session,
+                        user_input=input_data.message,
+                        final_output=agent_output.content,
+                        success=agent_output.success,
                     )
                     return agent_output
 
@@ -327,16 +321,13 @@ class ChatAgent(BaseAgent):
                     prompt_text,
                     runtime_session,
                 )
-                self._runtime_manager.ensure_session_exists(input_data.session_id)
-                self._runtime_manager.append_transcript_entry(
-                    session_id=input_data.session_id,
-                    transcript_entry=self._runtime_manager.build_transcript_entry(
-                        type="agent",
-                        runtime_session=runtime_session,
-                        user_input=input_data.message,
-                        final_output=agent_output.content,
-                        success=agent_output.success,
-                    ),
+                self._record_turn(
+                    input_data.session_id,
+                    entry_type="agent",
+                    runtime_session=runtime_session,
+                    user_input=input_data.message,
+                    final_output=agent_output.content,
+                    success=agent_output.success,
                 )
                 return agent_output
         else:
@@ -346,15 +337,12 @@ class ChatAgent(BaseAgent):
                 prompt_text,
                 runtime_session,
             )
-            self._runtime_manager.ensure_session_exists(input_data.session_id)
-            self._runtime_manager.append_transcript_entry(
-                session_id=input_data.session_id,
-                transcript_entry=self._runtime_manager.build_transcript_entry(
-                    type="agent",
-                    runtime_session=runtime_session,
-                    user_input=input_data.message,
-                    final_output=agent_output.content,
-                    success=agent_output.success,
-                ),
+            self._record_turn(
+                input_data.session_id,
+                entry_type="agent",
+                runtime_session=runtime_session,
+                user_input=input_data.message,
+                final_output=agent_output.content,
+                success=agent_output.success,
             )
             return agent_output

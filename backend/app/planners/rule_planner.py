@@ -29,12 +29,19 @@ class RulePlanner(BasePlanner):
         """根据输入内容生成最小规则计划结果。"""
         if not self.validate_input(input_data):
             return {
-                "action":"model",
-                "reason":"输入数据不合法，无法规划工具调用"
+                "action": "model",
+                "reason": "输入数据不合法，无法规划工具调用",
+                "tool_name": None,
+                "workflow_name": None,
+                "steps": [],
+                "context": {},
             }
         if self._should_use_workflow(input_data.message):
             return {
                 "action": "workflow",
+                "reason": "同时命中时间意图和自然回复意图，选择workflow",
+                "tool_name": None,
+                "workflow_name": "time_reply_workflow",
                 "steps": [
                     {
                         "step_name": "get_time",
@@ -53,6 +60,20 @@ class RulePlanner(BasePlanner):
             }
         tool_name = self._tool_router.route(input_data.message) if self._tool_router else None
         if tool_name is not None:
-            return {"action":"tool","tool_name": tool_name}
+            return {
+                "action": "tool",
+                "reason": "命中工具路由规则",
+                "tool_name": tool_name,
+                "workflow_name": None,
+                "steps": [],
+                "context": {},
+            }
 
-        return {"action": "model"}
+        return {
+            "action": "model",
+            "reason": "未命中workflow或tool规则，回退到模型",
+            "tool_name": None,
+            "workflow_name": None,
+            "steps": [],
+            "context": {},
+        }

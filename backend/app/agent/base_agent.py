@@ -29,7 +29,7 @@ class  BaseAgent(ABC):
         """
         return None
     @abstractmethod
-    def act(self,input_data:AgentInput,plan:Any=None)->AgentOutput:
+    def act(self, input_data: AgentInput) -> AgentOutput:
         """
         真正执行任务的核心接口，该方法必须实现
         """
@@ -45,8 +45,7 @@ class  BaseAgent(ABC):
         """
         if not self.validate_input(input_data):
             raise ValueError(f"输入不合法:{input_data}")
-        plan = self.plan(input_data)
-        return self.act(input_data,plan)
+        return self.act(input_data)
     
     def reset(self)->None:
         """

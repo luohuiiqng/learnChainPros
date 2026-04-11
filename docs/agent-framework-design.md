@@ -256,6 +256,23 @@
 2. 可清晰看到每一步的计划与执行结果。
 3. 能避免无限循环与失控执行。
 
+#### 当前阶段补充：解释性 Trace 已进入主链
+
+当前这条链已经不再只是“能执行”，而是开始进入“可解释执行”阶段：
+
+1. `RulePlanner.plan()` 已统一返回稳定的 `planner_result` 结构。
+2. `AgentExecutor.execute_step()` 已统一返回 step result 协议，包含：
+   - `action`
+   - `input_summary`
+   - `output_summary`
+   - `output`
+   - `error`
+3. `ChatAgent.act()` 已将 planner 决策写入 runtime trace。
+4. `ChatAgent._run_workflow()` 已将 workflow step 级的摘要信息写入 `workflow_trace`。
+5. `RuntimeSession.workflow_trace` 现在既能承载 planner 级解释，也能承载 workflow step 级解释。
+
+这意味着我们已经从“有运行记录”进一步进入“运行记录可解释、可展示、可测试”的阶段。
+
 ### 阶段 6：Workflow 编排能力
 
 目标：

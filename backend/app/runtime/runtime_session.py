@@ -46,7 +46,14 @@ class RuntimeSession:
         )
 
     def add_workflow_step_trace(
-        self, step_name: str, action: str, success: bool, output: Any, error: str | None
+        self,
+        step_name: str,
+        action: str,
+        success: bool,
+        output: Any,
+        input_summary: str,
+        output_summary: str,
+        error: str | None,
     ) -> None:
         timestamp = datetime.now().isoformat()
         self.workflow_trace.append(
@@ -56,6 +63,8 @@ class RuntimeSession:
                 "success": success,
                 "output": output,
                 "error": error,
+                "input_summary": input_summary,
+                "output_summary": output_summary,
                 "timestamp": timestamp,
             }
         )

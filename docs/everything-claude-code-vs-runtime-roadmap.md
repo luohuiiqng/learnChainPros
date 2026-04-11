@@ -244,6 +244,28 @@ control-plane / replay / monitor / UI
 
 ---
 
+## 7. 当前新增进展：planner / executor 解释性增强
+
+最近这一轮我们已经把 runtime 记录链再往前推了一步：
+
+1. `RulePlanner.plan()` 不再只返回松散 action，而是返回稳定的 `planner_result`。
+2. `AgentExecutor.execute_step()` 已统一 step result 协议，开始显式输出：
+   - `action`
+   - `input_summary`
+   - `output_summary`
+3. `ChatAgent` 已把 planner 决策和 workflow step 摘要一起写进 `RuntimeSession.workflow_trace`。
+4. 对应测试已经覆盖：
+   - planner trace 会记录完整 `plan`
+   - workflow step trace 会记录 step 级摘要
+
+这一步的意义在于：
+
+## 我们现在的 runtime 不只是“能保存”，还开始“会解释”
+
+这对后续前端调试台、持久化回放、失败分析都很关键。
+
+---
+
 ## 6. 一个更直白的路线图
 
 ```text
