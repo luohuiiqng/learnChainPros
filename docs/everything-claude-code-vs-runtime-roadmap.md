@@ -258,6 +258,29 @@ control-plane / replay / monitor / UI
    - planner trace 会记录完整 `plan`
    - workflow step trace 会记录 step 级摘要
 
+## 8. 当前新增进展：前端调试视图分层
+
+在完成解释性 trace 主链之后，前端调试台也进入了新的分层阶段：
+
+1. 首页不再承载完整 session 调试详情，而是改成轻量 `SessionSidebar`。
+2. session 的完整调试信息被迁移到独立 `SessionDetailPage`。
+3. 详情页已经能完整消费当前 runtime 数据，包括：
+   - `planner_result`
+   - `workflow_trace`
+   - `tool_calls`
+   - `model_calls`
+   - `workflow_result`
+   - `errors`
+4. 详情页支持 transcript 过滤、trace 过滤与 transcript 快捷切换，这说明前端已经不只是“展示存量数据”，而是在逐步形成 runtime 调试 surface。
+
+这一步很重要，因为它说明我们开始把：
+
+- runtime 数据结构
+- 调试交互
+- 页面分层
+
+作为同一个系统去设计，而不是各自零散演进。
+
 这一步的意义在于：
 
 ## 我们现在的 runtime 不只是“能保存”，还开始“会解释”

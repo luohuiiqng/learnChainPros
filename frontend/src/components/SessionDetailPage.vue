@@ -111,6 +111,20 @@ const filteredTranscript = computed(() =>
   }),
 );
 
+const activeTranscriptIndex = computed(() =>
+  filteredTranscript.value.findIndex((entry, index) => buildEntryId(entry, index) === expandedEntryId.value),
+);
+
+const canGoPreviousTranscript = computed(
+  () => activeTranscriptIndex.value > 0,
+);
+
+const canGoNextTranscript = computed(
+  () =>
+    activeTranscriptIndex.value >= 0 &&
+    activeTranscriptIndex.value < filteredTranscript.value.length - 1,
+);
+
 const pageStats = computed(() => {
   if (transcript.value.length === 0) {
     return [
@@ -327,6 +341,26 @@ async function toggleRuntime(entryId: string) {
   if (expandedEntryId.value) {
     await scrollExpandedEntryIntoView();
   }
+}
+
+async function showPreviousTranscript() {
+  if (!canGoPreviousTranscript.value) {
+    return;
+  }
+
+  const targetIndex = activeTranscriptIndex.value - 1;
+  expandedEntryId.value = buildEntryId(filteredTranscript.value[targetIndex], targetIndex);
+  await scrollExpandedEntryIntoView();
+}
+
+async function showNextTranscript() {
+  if (!canGoNextTranscript.value) {
+    return;
+  }
+
+  const targetIndex = activeTranscriptIndex.value + 1;
+  expandedEntryId.value = buildEntryId(filteredTranscript.value[targetIndex], targetIndex);
+  await scrollExpandedEntryIntoView();
 }
 
 async function scrollExpandedEntryIntoView() {
@@ -664,6 +698,32 @@ watch(
               </button>
             </div>
           </header>
+
+          <section class="transcript-navigation">
+            <button
+              type="button"
+              class="ghost-button"
+              :disabled="!canGoPreviousTranscript"
+              @click="showPreviousTranscript"
+            >
+              上一条
+            </button>
+            <span class="transcript-navigation-label">
+              {{
+                activeTranscriptIndex >= 0
+                  ? `当前第 ${activeTranscriptIndex + 1} / ${filteredTranscript.length} 条`
+                  : "当前没有展开记录"
+              }}
+            </span>
+            <button
+              type="button"
+              class="ghost-button"
+              :disabled="!canGoNextTranscript"
+              @click="showNextTranscript"
+            >
+              下一条
+            </button>
+          </section>
 
           <section class="trace-filters transcript-filters">
             <label class="filter-field">
@@ -1363,6 +1423,18 @@ watch(
   min-height: 0;
 }
 
+.transcript-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transcript-navigation-label {
+  font-size: 13px;
+  color: #64748b;
+}
+
 .transcript-filters {
   grid-template-columns: 180px minmax(0, 1fr);
 }
@@ -1614,6 +1686,11 @@ watch(
   .transcript-filters,
   .trace-output-grid {
     grid-template-columns: 1fr;
+  }
+
+  .transcript-navigation {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .panel-actions {

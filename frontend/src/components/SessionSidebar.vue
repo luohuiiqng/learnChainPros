@@ -132,12 +132,12 @@ function formatTime(value: string) {
           :key="session.session_id"
           type="button"
           class="session-card"
-          :class="{ 'is-active': session.session_id === activeSessionId }"
+          :class="{ 'is-active': session.session_id === props.activeSessionId }"
           @click="emit('openSessionDetail', session.session_id)"
         >
           <div class="session-card-top">
             <span class="session-chip">Session</span>
-            <span v-if="session.session_id === activeSessionId" class="active-chip">当前</span>
+            <span v-if="session.session_id === props.activeSessionId" class="active-chip">当前</span>
           </div>
           <strong>{{ session.session_id.slice(0, 8) }}</strong>
           <span class="session-time">更新于 {{ formatTime(session.updated_at) }}</span>
