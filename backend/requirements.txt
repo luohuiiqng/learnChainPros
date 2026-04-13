@@ -25,6 +25,7 @@ MarkupSafe==3.0.3
 openai==2.30.0
 orjson==3.11.7
 packaging==25.0
+prometheus_client==0.21.1
 pydantic==2.11.7
 pydantic_core==2.33.2
 python-dotenv==1.2.2

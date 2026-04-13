@@ -5,6 +5,8 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   timestamp: string;
+  /** 逻辑失败时后端返回的稳定码（HTTP 仍可能为 200） */
+  error_code?: string | null;
 }
 
 export interface ChatRequest {
@@ -16,6 +18,13 @@ export interface ChatResponse {
   reply: string;
   session_id: string;
   timestamp: string;
+  /** 与响应头 X-Request-ID 一致，便于排障 */
+  request_id?: string | null;
+  /**
+   * 逻辑失败时的稳定码（与后端 ErrorCode 一致），HTTP 仍可能为 200；
+   * 成功时为 null/undefined
+   */
+  error_code?: string | null;
 }
 
 export interface SessionResponse {

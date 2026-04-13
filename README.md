@@ -4,7 +4,9 @@
 
 本仓库主代码库当前处于 **快速开发迭代** 主线：以可交付增量、端到端联调与回归验证为中心，**不再按「纯学习 / 教案式」节奏推进**。`student/` 下的外部参考项目仅作对照阅读，不代表主仓库的开发节拍。
 
-设计总纲与演进原则见 [`docs/agent-framework-design.md`](docs/agent-framework-design.md)。迭代期若行为、接口或配置有变，请同步更新本文档相关小节。
+**当前阶段**：优先深化 **`backend/` 自研 Agent 框架**；前端以维持现有聊天与必要联调为主，**不将展示层作为迭代重点**。
+
+设计总纲与演进原则见 [`docs/agent-framework-design.md`](docs/agent-framework-design.md)。**参考项目（claw-code-main / everything-claude-code）与主仓对齐说明**见 [`docs/harness-and-ecc-learning-alignment.md`](docs/harness-and-ecc-learning-alignment.md)。迭代期若行为、接口或配置有变，请同步更新本文档相关小节。
 
 ---
 
@@ -14,12 +16,13 @@
 - FastAPI 后端聊天接口
 - 自研 Agent 框架最小骨架
 - `MockModel` 与真实 `OpenAIModel` 接入
-- 规则版 `ToolRouter` + `ToolRegistry` + `TimeTool`
+- 规则版 `ToolRouter` + `ToolRegistry` + `TimeTool` / `WeatherTool`（示例工具）
 - `BaseMemory` 与 `InMemoryMemory` 短期记忆实现
 - 模型分支可读取最近历史消息参与上下文构建
 - `BasePlanner` 与 `RulePlanner` 规则规划能力
-- `BaseWorkflow`、`SequentialWorkflow` 与 `AgentExecutor` 最小工作流执行能力
-- Workflow 支持步骤结果传递，后一步可消费前一步输出
+- `BaseWorkflow`、`SequentialWorkflow`、`ConditionalWorkflow` 与 `AgentExecutor` 工作流执行能力
+- `WorkflowResult` 统一工作流产出；`WorkflowRegistry` 按名解析工作流，便于扩展
+- Workflow 支持步骤结果传递；条件分支步骤可依赖前序步骤字段（如 `success`）决定执行或跳过
 - `RuntimeSession` 运行快照能力，可记录单轮输入、规划、调用轨迹与最终输出
 - `BaseTranscriptStore` 与 `InMemoryTranscriptStore`，可按 `session_id` 保存多轮运行记录
 - `BaseSessionStore` 与 `InMemorySessionStore`，可管理 session 元信息并在主链中自动建 session
@@ -41,7 +44,7 @@ AgentInput
   -> ChatAgent 执行计划
      -> tool plan：ToolRegistry -> Tool
      -> model plan：Memory history -> PromptBuilder -> OpenAIModel / MockModel
-     -> workflow plan：SequentialWorkflow -> AgentExecutor
+     -> workflow plan：WorkflowRegistry -> SequentialWorkflow / ConditionalWorkflow -> AgentExecutor
   -> RuntimeSession 聚合本轮输入、计划、步骤轨迹、调用轨迹与最终输出
   -> SessionStore 确保当前 session 存在
   -> TranscriptStore 追加本轮 agent_run 记录
@@ -71,6 +74,8 @@ AgentInput
 ```text
 /agent_api/chat
 ```
+
+**联调检查（`error_code` UI）**：`pnpm dev` 下若接口返回 `error_code`，助手气泡应显示稳定码；`pnpm build` 后 `pnpm preview` 应仅显示友好提示并带琥珀色强调样式（不暴露技术码）。
 
 ### 2. 后端 API 层
 
@@ -124,6 +129,7 @@ AgentInput
 - `backend/app/models/openai_model.py`
 - `backend/app/tools/base_tool.py`
 - `backend/app/tools/time_tool.py`
+- `backend/app/tools/weather_tool.py`
 - `backend/app/tools/tool_registry.py`
 - `backend/app/tools/tool_router.py`
 - `backend/app/memory/base_memory.py`
@@ -133,9 +139,13 @@ AgentInput
 - `backend/app/prompts/base_prompt.py`
 - `backend/app/prompts/prompt_builder.py`
 - `backend/app/workflows/base_workflow.py`
+- `backend/app/workflows/workflow_result.py`
 - `backend/app/workflows/sequential_workflow.py`
+- `backend/app/workflows/conditional_workflow.py`
+- `backend/app/workflows/workflow_registry.py`
 - `backend/app/workflows/base_executor.py`
 - `backend/app/workflows/agent_executor.py`
+- `backend/app/services/agent_factory.py`
 - `backend/app/runtime/runtime_session.py`
 - `backend/app/runtime/base_transcript_store.py`
 - `backend/app/runtime/in_memory_transcript_store.py`
@@ -340,11 +350,24 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-健康检查：
+健康检查（根路径，**无** `/agent_api` 前缀）：
 
 ```text
 GET http://127.0.0.1:8000/health
 ```
+
+响应示例（便于编排探针与运维对齐开关）。**`api_version`** 与 OpenAPI 文档版本均来自代码单点 **`backend/app/version.py`**（`API_VERSION`），避免多处手写不一致：
+
+```json
+{
+  "status": "ok",
+  "api_version": "0.1.0",
+  "metrics_enabled": true,
+  "agent_read_api_enabled": true
+}
+```
+
+当 **`AGENT_READ_API_ENABLED`** 为关闭时，启动日志会出现 **WARNING**（`app.main`），且 `agent_read_api_enabled` 为 `false`。
 
 ### 2. 配置后端环境变量
 
@@ -367,6 +390,20 @@ OPENAI_ORGANIZATION=
   职责：指定兼容 OpenAI 的第三方接口地址
 - `OPENAI_ORGANIZATION`
   职责：可选组织信息
+
+常用可选变量（完整列表见 `backend/app/config/settings.py` 中 `Settings.from_env`）：
+
+| 变量 | 作用 |
+|------|------|
+| `STORE_BACKEND` | `memory`（默认）或 `sqlite` |
+| `RUNTIME_DB_PATH` | sqlite 模式下数据库文件路径 |
+| `PLANNER_RULES_PATH` | 自定义 RulePlanner workflow 触发 JSON；若设置则文件必须存在 |
+| `OPENAI_TIMEOUT_SECONDS` / `OPENAI_MAX_RETRIES` | 模型请求超时与重试 |
+| `TOOL_TIMEOUT_SECONDS` | 工具调用超时（秒） |
+| `METRICS_ENABLED` | 是否暴露 `GET /metrics`（含 `lcp_planner_route_total`、`lcp_planner_plan_duration_seconds`、`lcp_workflow_runs_total`、`lcp_workflow_duration_seconds`、`lcp_agent_act_duration_seconds`、`lcp_agent_act_exceptions_total` 等，见 `app/observability/metrics.py`） |
+| `LOG_LEVEL` / `LOG_JSON` | 日志级别与是否 JSON 格式 |
+| `AGENT_LIFECYCLE_LOGGING` | 是否为 `ChatAgent` 装配生命周期调试日志 |
+| `AGENT_READ_API_ENABLED` | 是否开放会话列表、单条 session、transcript、Markdown 等**只读** HTTP；默认开启；设为 `false` / `0` / `no` 关闭；**不影响** `POST /agent_api/chat` |
 
 ### 3. 启动前端
 
@@ -400,6 +437,10 @@ http://127.0.0.1:8000
 
 ## API 说明
 
+OpenAPI 与在线调试：启动后端后访问 **`http://127.0.0.1:8000/docs`**（Swagger UI）。以下路径均带前缀 **`/agent_api`**。
+
+若环境变量 **`AGENT_READ_API_ENABLED`** 为关闭，下列 **GET**（会话与 transcript 相关）会返回 **403**，body 形如 `{"error": {"code": "FORBIDDEN", "message": "只读接口已禁用"}}`；**`POST /agent_api/chat` 不受影响**。
+
 ### POST `/agent_api/chat`
 
 请求体：
@@ -411,17 +452,31 @@ http://127.0.0.1:8000
 }
 ```
 
-成功响应：
+成功响应（HTTP **200**）：
 
 ```json
 {
   "reply": "你好，很高兴见到你",
   "session_id": "same-or-generated-uuid",
-  "timestamp": "2026-03-29T10:00:00Z"
+  "timestamp": "2026-03-29T10:00:00Z",
+  "request_id": "optional-from-header",
+  "error_code": null
 }
 ```
 
-错误响应：
+**业务逻辑失败**（如未注册 workflow、工具/模型失败）时 HTTP 仍多为 **200**，`reply` 为人类可读说明，**稳定分支请用 `error_code`**（与 `backend/app/schemas/error_codes.py` 中 `ErrorCode` 一致）。前端 Playground：生产构建下对带 `error_code` 的助手气泡显示友好提示；开发模式（`npm run dev`）下额外显示稳定码便于联调。例如：
+
+```json
+{
+  "reply": "未注册的工作流: foo",
+  "session_id": "same-or-generated-uuid",
+  "timestamp": "2026-03-29T10:00:00Z",
+  "request_id": "optional-from-header",
+  "error_code": "WORKFLOW_NOT_REGISTERED"
+}
+```
+
+参数校验失败（空消息、超长等）的 **400** 响应：
 
 ```json
 {
@@ -431,6 +486,30 @@ http://127.0.0.1:8000
   }
 }
 ```
+
+请求可携带 **`X-Request-ID`**（或 `x-request-id`），响应头会回显同一 ID，便于与日志、观测关联。
+
+### GET `/agent_api/sessions`
+
+返回当前后端可见的会话元信息列表（`SessionResponse[]`）。
+
+### GET `/agent_api/sessions/{session_id}`
+
+按 `session_id` 返回单条会话元信息；不存在时 **404**，body 为 `{"error": {"code": "NOT_FOUND", ...}}`。
+
+### GET `/agent_api/sessions/{session_id}/transcript`
+
+返回该会话的 transcript 记录（JSON，含 `RuntimeSessionSnapshot`）。
+
+### GET `/agent_api/sessions/{session_id}/transcript/{entry_index}/markdown`
+
+按 **0-based** 下标导出**指定一轮**的 `RuntimeSession` Markdown（`text/markdown`），下标与上一条 JSON 数组顺序一致；下标越界或无可导出记录时 **404**。`entry_index` 须 `>= 0`，否则校验失败（**422**）。
+
+### GET `/agent_api/sessions/{session_id}/transcript/latest/markdown`
+
+返回**最新一条** transcript 对应轮次的 **`RuntimeSession` Markdown 导出**（`text/markdown`），与内核 `runtime_session_to_markdown` 一致，用于排障与对账；无记录时 **404**。
+
+框架侧规则规划、workflow 触发与扩展点说明见 **`docs/agent-framework-design.md`**（如 §3.7 `PLANNER_RULES_PATH` 与 `register_workflow_plan_builder`）。
 
 ## 后端 Docker 部署
 

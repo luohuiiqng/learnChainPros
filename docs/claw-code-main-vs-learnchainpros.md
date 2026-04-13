@@ -108,36 +108,19 @@ learnChainPros
 
 #### `learnChainPros`
 
-当前没有一个完全对应的显式 `Runtime` 模块。  
-目前这部分能力散落在：
+主链仍以 `ChatAgent` 为编排核心，但已抽出 **`RuntimeManager`** 作为记录与协调层，并与 **`RuntimeSession`**（单轮运行快照：规划、workflow trace、工具/模型调用、错误与 `workflow_result`）配合使用：
 
-- [`backend/app/agent/chat_agent.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/agent/chat_agent.py)
-- [`backend/app/services/chat_service.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/services/chat_service.py)
+- [`backend/app/runtime/runtime_manager.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/runtime_manager.py)
+- [`backend/app/runtime/runtime_session.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/runtime_session.py)
+- [`backend/app/agent/chat_agent.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/agent/chat_agent.py)（规划、工具/模型/工作流分支与 trace 写入）
 - [`backend/app/planners/rule_planner.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/planners/rule_planner.py)
-- [`backend/app/workflows/sequential_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/sequential_workflow.py)
-- [`backend/app/workflows/agent_executor.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/agent_executor.py)
+- [`backend/app/workflows/sequential_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/sequential_workflow.py)、[`conditional_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/conditional_workflow.py)、[`agent_executor.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/agent_executor.py)
+
+尚未引入对方那种「大而全」的独立 **`Runtime` façade**（例如 CLI 总控 + turn loop 一体），但 **`RuntimeManager + RuntimeSession`** 已承担「一次请求内聚合观测」的职责，方向与对方 `bootstrap_session` 汇总报告类似、范围更小。
 
 #### 对照结论
 
-这里是我们当前**最值得学习**对方的一块。
-
-也就是说：
-
-## 我们已经有执行主链，但还没有一个统一的 Runtime 壳
-
-后续非常适合引入：
-
-- `RuntimeSession`
-- `Runtime`
-- 或 `ExecutionReport`
-
-来聚合：
-- 输入
-- 计划
-- workflow steps
-- 工具调用
-- 模型输出
-- memory 写入
+执行主链与**可观测快照**已对齐到同一套对象上；后续若借鉴对方，重点仍是：**显式 Query/Turn 引擎、usage、stop_reason、结构化重试** 等，而不是重复造一个与 `RuntimeManager` 重叠的壳。
 
 ---
 
@@ -158,12 +141,10 @@ learnChainPros
 #### `learnChainPros`
 
 当前没有显式独立的 `QueryEngine` 层。  
-类似职责目前散落在：
+类似职责主要分布在：
 
-- `ChatAgent`
-- `Memory`
-- `PromptBuilder`
-- 测试脚本
+- `ChatAgent`（单轮编排、规划分支、转写协调）
+- `Memory` / `PromptBuilder`（上下文与 prompt）
 
 #### 对照结论
 
@@ -256,7 +237,7 @@ learnChainPros
 #### `learnChainPros`
 
 - [`backend/app/tools/base_tool.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/base_tool.py)
-- [`backend/app/tools/time_tool.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/time_tool.py)
+- [`backend/app/tools/time_tool.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/time_tool.py)、[`weather_tool.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/weather_tool.py)（示例工具，由 `AgentFactory` 注册）
 - [`backend/app/tools/tool_registry.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/tool_registry.py)
 - [`backend/app/tools/tool_router.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/tools/tool_router.py)
 
@@ -294,9 +275,10 @@ learnChainPros
 
 职责：
 
-- 通过 `ToolRouter` 决定：
-  - 走 `tool`
-  - 还是走 `model`
+- 通过规则与 `ToolRouter` 决定 `planner_result.action`：
+  - `tool`：单工具直调
+  - `model`：直调模型
+  - `workflow`：下发 `workflow_name` 与 `steps`，由 `ChatAgent` 经 **`WorkflowRegistry`** 解析为 `SequentialWorkflow`、`ConditionalWorkflow` 等实现并执行
 
 #### 对照结论
 
@@ -323,16 +305,17 @@ learnChainPros
 #### `learnChainPros`
 
 - [`backend/app/workflows/base_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/base_workflow.py)
-- [`backend/app/workflows/sequential_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/sequential_workflow.py)
+- [`backend/app/workflows/sequential_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/sequential_workflow.py)（顺序执行，**单步失败即结束**并返回失败汇总）
+- [`backend/app/workflows/conditional_workflow.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/conditional_workflow.py)（按步骤 `condition` 选择后继，支持失败后的兜底模型步骤等）
+- [`backend/app/workflows/workflow_registry.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/workflow_registry.py)、[`workflow_result.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/workflow_result.py)
 - [`backend/app/workflows/base_executor.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/base_executor.py)
 - [`backend/app/workflows/agent_executor.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/workflows/agent_executor.py)
 
 职责：
 
-- 顺序执行 step
-- fail-fast
-- 支持 tool/model step
-- 支持步骤结果传递
+- 由 `AgentExecutor` 执行 `tool` / `model` 步骤并产出统一 step result
+- 支持步骤结果传递（后一步消费前一步输出）
+- 顺序与条件两种控制流并存，由规划层命名工作流
 
 #### 对照结论
 
@@ -359,19 +342,17 @@ learnChainPros
 
 #### `learnChainPros`
 
-目前相关能力分散在：
+已拆出与主链衔接的存储与协调层（与 `Memory` 解耦）：
 
-- `Memory`
-- 测试脚本
-- `ChatAgent`
+- [`backend/app/runtime/base_transcript_store.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/base_transcript_store.py) / 内存与 SQLite 实现
+- [`backend/app/runtime/base_session_store.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/base_session_store.py) / 内存与 SQLite 实现
+- [`backend/app/runtime/transcript_entry.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/transcript_entry.py)
+- [`backend/app/runtime/runtime_manager.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/runtime/runtime_manager.py)（确保 session、构建并追加 transcript）
+- HTTP 查询：[`backend/app/routes/chat.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/backend/app/routes/chat.py) 中 `list_sessions`、`get_session_transcript`
 
 #### 对照结论
 
-这是对方非常值得借鉴的一块。
-
-也就是说：
-
-## 我们后续很适合把 transcript / runtime history / persisted session 拆成独立层
+在「会话元信息 / 多轮转写 / 运行快照入条」方向上，主仓已与对方分层思路对齐；后续仍可借鉴 **`HistoryLog` 式事件流**、更细的 usage 与 compact 策略。
 
 ---
 
@@ -437,16 +418,7 @@ learnChainPros
 
 - [`src/runtime.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/claw-code-main/src/runtime.py)
 
-我们可以借鉴的方向：
-
-- 定义一次执行的总报告对象
-- 汇总：
-  - 输入
-  - planner 结果
-  - workflow steps
-  - tool/model outputs
-  - memory write
-  - timing / usage / errors
+主仓现状：`RuntimeSession` + `workflow_trace` / `workflow_result` 等已承载单轮总览。借鉴方向侧重 **usage、耗时、token 级汇总** 等与对方报告粒度对齐。
 
 ### 第二优先级：`TranscriptStore / SessionStore / HistoryLog`
 对应来源：
@@ -455,9 +427,7 @@ learnChainPros
 - [`src/session_store.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/claw-code-main/src/session_store.py)
 - [`src/history.py`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/claw-code-main/src/history.py)
 
-我们可以借鉴的方向：
-
-- 把对话转录、运行历史、会话持久化拆开
+主仓现状：Transcript / Session 抽象与 SQLite 实现、查询 API 已具备。借鉴方向侧重 **独立 History 事件流**、compact 与跨 harness 对齐（若未来需要）。
 
 ### 第三优先级：`ExecutionRegistry`
 对应来源：
@@ -496,9 +466,9 @@ learnChainPros
 
 1. 先把这份对照表和架构说明读透
 2. 再从 `claw-code-main` 里挑一个最值得借鉴的点
-3. 优先从 `RuntimeSession` 开始
-4. 再考虑 transcript / session store / history log
-5. 最后再看 execution registry 和 permissions
+3. 在已有 **`RuntimeSession` + `RuntimeManager` + Store** 的基础上，优先补 **Query/Turn 语义**（步数上限、stop_reason、usage）与 **History 式观测**
+4. 持续打磨 **workflow 注册与条件/并行** 与 runtime trace 的一致性
+5. 需要工具治理时再引入 **permissions / execution registry** 等策略层
 
 ## 8. 一句话总结
 
@@ -510,4 +480,4 @@ learnChainPros
 
 ## Agent -> Prompt -> Tool -> Memory -> Planner -> Workflow -> Executor
 
-在这个主链稳定的基础上，再有选择地吸收对方的 runtime / observability 设计。*** End Patch
+在这个主链稳定的基础上，再有选择地吸收对方的 runtime / observability 设计。

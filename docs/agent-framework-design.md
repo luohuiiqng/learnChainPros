@@ -8,6 +8,8 @@
 
 **当前主线说明**：主仓库代码采用 **快速开发迭代** 策略——优先可合并的增量、可回归的测试、以及与本文件和根目录 `README.md` 的同步更新；**不等同于「学习分支」**。文中仍保留「先最小可用再增强」的工程方法，是指范围控制与里程碑拆分，而非以教学演示为首要目标。
 
+**阶段聚焦（当前）**：优先投入 **`backend/app` 自研 Agent 框架**（模型、工具、规划、工作流、Runtime、存储、可观测、扩展点与测试）。**前端展示与调试 UI 非本阶段重点**——保持现有联调能力即可，除非接口契约或配置变更需要最小同步，否则不展开界面与交互迭代。
+
 ## 2. 项目总目标
 
 我们的目标是从 0 开始实现一个完整的 Agent 框架。
@@ -84,6 +86,11 @@
 4. 工具调用参数与结果。
 5. 计划生成与执行步骤。
 6. 错误、重试与中断信息。
+7. Prometheus：`GET /metrics` 暴露计数器 **`lcp_planner_route_total`**（标签 **`kind`**：`workflow` / `tool` / `model` / `unknown` / `no_planner`），对应每轮 `planner_result["action"]` 或无 planner 时直走模型；**`lcp_workflow_runs_total`**（`workflow_name`、`outcome`）在 **`ChatAgent._run_workflow`** 结束时记录；若规划为 workflow 但 **`WorkflowRegistry` 未注册**对应名称，则在返回前以 **`outcome=error`** 记一次（与未执行工作流实例一致）。Histogram **`lcp_workflow_duration_seconds`**（同一组标签）仅在真实执行 **`workflow.run`** 的路径上记录耗时。实现见 `backend/app/observability/metrics.py`。
+8. Histogram **`lcp_agent_act_duration_seconds`**（标签 **`outcome`**：`success` / `error`）覆盖整轮 **`ChatAgent.act`**（含 lifecycle hooks 与 **`_execute_act`**），与 **`lcp_workflow_duration_seconds`**（仅 workflow 子段）互补；若 **`before_act` / `after_act` / `_execute_act`** 抛出未捕获异常，则 **`outcome=error`** 且 Counter **`lcp_agent_act_exceptions_total`** 加一（异常仍向外抛出）。
+9. Histogram **`lcp_planner_plan_duration_seconds`**（`outcome`）记录 **`planner.plan`** 单次调用耗时；无 planner 时不记；**`plan()`** 抛异常时记一次 **`error`** 后仍向上抛出。
+10. 未捕获异常：FastAPI 全局 **`Exception`** 处理器在返回 500 统一 JSON 前写 **ERROR** 日志（含 traceback；若存在则附带 **`request_id`**），便于与 **`lcp_agent_act_exceptions_total`** 等指标对照排查。
+11. **`lcp_chat_completions_total`**：`POST /agent_api/chat` 在 **`ChatService.chat`** 正常返回时按 **`AgentOutput.success`** 记 **`outcome`**；若 **`chat()`** 抛出未捕获异常，先记 **`error`** 再向上抛出（与 HTTP 500 一致）。路由层同时打 **`app.chat`** 的 **`chat_failed`** 结构化错误日志（含 traceback 与 **`request_id`** / **`session_id`**），与全局 **`unhandled_exception`** 日志互补。
 
 ### 3.5 面向生产演进
 
@@ -91,10 +98,35 @@
 
 1. 配置管理。
 2. 超时与重试机制。
-3. 统一错误模型。
+3. 统一错误模型（见 **§3.8**，持续与 HTTP / 日志 / 指标对齐）。
 4. 测试能力。
 5. 并发与异步支持。
 6. 持久化与回放能力。
+
+### 3.6 生命周期钩子（对齐 harness hooks / ECC 横切思想）
+
+为 **审计、计费、实验与观测** 预留与业务主链解耦的扩展点，而不把横切逻辑继续堆进 `ChatAgent` 内部：
+
+1. 协议 **`AgentLifecycleHook`**（`before_act` / `after_act`），见 `backend/app/hooks/lifecycle.py`。
+2. **`ChatAgent`** 支持构造参数 **`hooks`**，在单轮 `act` 进入核心逻辑前后调用；**约定只读**，避免与 `AgentInput` / `AgentOutput` 契约冲突。
+3. **`AgentFactory`** 在 **`AGENT_LIFECYCLE_LOGGING=true`** 时装配 **`LoggingLifecycleHook`**，输出与 `request_id` 可关联的结构化日志（`app.agent.lifecycle`）；**`agent_after_act`** 的 `extra` 含 **`reply_len` / `error_len`**（仅长度，不落原文）及可选 **`error_code`**。
+4. **`runtime_session_to_markdown`**（`backend/app/runtime/session_export.py`）：将单轮 **`RuntimeSession`** 导出为 Markdown，便于工单与人工排查（长 JSON / prompt 自动截断）。应用层已提供 HTTP 封装：**`GET .../transcript/{entry_index}/markdown`**（按下标）、**`GET .../transcript/latest/markdown`**（最新一轮）（见 **§11.1**）。
+5. 更系统的 **策略表 / hook 插件发现** 见 [`harness-and-ecc-learning-alignment.md`](harness-and-ecc-learning-alignment.md) 中的后续建议。
+
+### 3.7 RulePlanner 与工作流触发配置（JSON + plan builder）
+
+`RulePlanner` 在命中 **workflow 触发规则** 时，会生成带 `steps` 的 `planner_result`（`action: workflow`），与运行时 **`WorkflowRegistry` 按 `workflow_name` 解析具体工作流实现** 是两段衔接：触发 JSON 决定「何时选哪个名字」，**plan builder** 决定「该名字对应的步骤模板」。
+
+1. **默认触发规则**：包内 `backend/app/planners/data/default_workflow_triggers.json`。结构为 `version` + `workflow_triggers[]`；每条含 `workflow_name`、`reason`、`keyword_groups`。匹配语义：**多组之间为 AND**，组内多个关键词为 **OR（子串命中即可）**。
+2. **自定义规则文件**：环境变量 **`PLANNER_RULES_PATH`**（对应 `Settings.planner_rules_path`）。若设置，则**必须**指向已存在的 JSON 文件；缺失时启动加载会失败（`FileNotFoundError`），避免误用默认规则。未设置时仍使用包内默认文件。
+3. **扩展 plan builder**：在 **`workflow_plan_builders.register_workflow_plan_builder(workflow_name, builder)`** 注册与 JSON 中 **`workflow_name` 字符串一致** 的构建器；构建器负责产出该 workflow 的 `steps` 等片段。执行侧 **`ChatAgent` / `WorkflowRegistry`** 注册的 workflow **类名或注册名**也应与同一 `workflow_name` 对齐，否则规划能命中、执行却解析失败。
+4. **可观测性**：`AgentFactory` 在配置了 `planner_rules_path` 时打 **INFO**（logger：`app.agent.factory`），标明将加载的文件路径。若 JSON 中出现未注册 plan builder 的 `workflow_name`，`RulePlanner` 初始化时会打 **WARNING** 并跳过这些规则（logger：`app.planner.rule`），避免静默失效。
+
+### 3.8 统一错误码（ErrorCode）与 Workflow 单步重试/超时
+
+1. **稳定码**：字符串常量见 **`backend/app/schemas/error_codes.py`**（如 **`WORKFLOW_NOT_REGISTERED`**、**`WORKFLOW_STEP_FAILED`**、**`TOOL_NOT_FOUND`**、**`TOOL_TIMEOUT`**、**`MODEL_ERROR`**、**`MODEL_TIMEOUT`**、**`INVALID_INPUT`** 等）。**`AgentOutput.error_code`** 在逻辑失败时尽量填写；**`POST /agent_api/chat`** 的 **`ChatResponse.error_code`** 与之对齐（HTTP 仍为 200 时用于区分「可预期失败」）。
+2. **单步重试**：`steps[]` 中可选 **`step_retry_max`**（0～5，默认 0）。默认可重试 **`error_code`** 见 **`DEFAULT_RETRYABLE_STEP_ERROR_CODES`**（**`TOOL_TIMEOUT`**、**`MODEL_TIMEOUT`**）；**`TOOL_NOT_FOUND`**、**`TOOL_ERROR`**、**`MODEL_ERROR`** 等默认不重试。单步可用 **`step_retryable_error_codes`**（字符串数组）覆盖默认集合（例如加入 **`MODEL_ERROR`** 以允许模型瞬时失败重试）；传 **空数组 `[]`** 表示该步**任何**错误码都不重试。每次重试前 **`lcp_workflow_step_retry_attempts_total`**（标签 **`action`**：`tool` / `model` / `unknown`）加一；成功结果中可含 **`retry_count`**（重试次数）。
+3. **单步超时**：可选 **`step_timeout_seconds`**（正数秒）。**`tool`** 步骤覆盖 **`AgentExecutor`** 的默认工具超时；**`model`** 步骤在默认 **`model.generate`** 之外增加线程级上限（与工具超时实现方式一致），超时错误码 **`MODEL_TIMEOUT`**。
 
 ## 4. 最终希望具备的能力地图
 
@@ -333,6 +365,9 @@ flowchart TB
     subgraph WorkflowLayer["Workflow Layer"]
         base_workflow["workflows/base_workflow.py<br/>BaseWorkflow"]
         seq_workflow["workflows/sequential_workflow.py<br/>SequentialWorkflow"]
+        cond_workflow["workflows/conditional_workflow.py<br/>ConditionalWorkflow"]
+        wf_registry["workflows/workflow_registry.py<br/>WorkflowRegistry"]
+        wf_result["workflows/workflow_result.py<br/>WorkflowResult"]
         base_executor["workflows/base_executor.py<br/>BaseExecutor"]
         agent_executor["workflows/agent_executor.py<br/>AgentExecutor"]
     end
@@ -354,6 +389,7 @@ flowchart TB
     subgraph ToolLayer["Tool Layer"]
         base_tool["tools/base_tool.py<br/>BaseTool"]
         time_tool["tools/time_tool.py<br/>TimeTool"]
+        weather_tool["tools/weather_tool.py<br/>WeatherTool"]
         tool_registry["tools/tool_registry.py<br/>ToolRegistry"]
         tool_router["tools/tool_router.py<br/>ToolRouter"]
     end
@@ -394,6 +430,7 @@ flowchart TB
     factory --> tool_registry
     factory --> tool_router
     factory --> time_tool
+    factory --> weather_tool
     factory --> prompt_builder
     factory --> in_memory_memory
     factory --> runtime_manager
@@ -432,6 +469,7 @@ classDiagram
 
     class ChatAgent {
       -_tool_registry
+      -_workflow_registry
       -_memory
       -_prompt_builder
       -_planner
@@ -449,7 +487,8 @@ classDiagram
     class RulePlanner {
       -_tool_router
       +plan(input_data, context)
-      -_should_use_workflow(message)
+      -_should_use_sequential_workflow(message)
+      -_should_use_conditional_workflow(message)
     }
 
     class BaseWorkflow {
@@ -459,6 +498,19 @@ classDiagram
 
     class SequentialWorkflow {
       +run(steps, executor, context)
+    }
+
+    class ConditionalWorkflow {
+      +run(steps, executor, context)
+    }
+
+    class WorkflowRegistry {
+      +register(name, factory)
+      +get(name)
+    }
+
+    class WorkflowResult {
+      +to_dict()
     }
 
     class BaseExecutor {
@@ -569,6 +621,7 @@ classDiagram
     }
 
     class TimeTool
+    class WeatherTool
 
     ChatService --> AgentFactory
     AgentFactory --> ChatAgent
@@ -587,12 +640,14 @@ classDiagram
     ChatAgent --|> BaseAgent
     RulePlanner --|> BasePlanner
     SequentialWorkflow --|> BaseWorkflow
+    ConditionalWorkflow --|> BaseWorkflow
     AgentExecutor --|> BaseExecutor
     OpenAIModel --|> BaseModel
     MockModel --|> BaseModel
     InMemoryMemory --|> BaseMemory
     PromptBuilder --|> BasePrompt
     TimeTool --|> BaseTool
+    WeatherTool --|> BaseTool
     InMemorySessionStore --|> BaseSessionStore
     PersistentSessionStore --|> BaseSessionStore
     InMemoryTranscriptStore --|> BaseTranscriptStore
@@ -602,8 +657,10 @@ classDiagram
     ChatAgent --> PromptBuilder
     ChatAgent --> BaseMemory
     ChatAgent --> ToolRegistry
+    ChatAgent --> WorkflowRegistry
     ChatAgent --> RuntimeManager
     ChatAgent --> SequentialWorkflow
+    ChatAgent --> ConditionalWorkflow
     ChatAgent --> AgentExecutor
     ChatAgent --> RuntimeSession
 
@@ -626,10 +683,10 @@ sequenceDiagram
     participant Service as ChatService
     participant Agent as ChatAgent
     participant Planner as RulePlanner
-    participant Workflow as SequentialWorkflow
+    participant Workflow as WorkflowImpl
     participant Executor as AgentExecutor
     participant Model as OpenAIModel
-    participant Tools as ToolRegistry/TimeTool
+    participant Tools as ToolRegistry
     participant Runtime as RuntimeManager
     participant SessionStore as SessionStore
     participant TranscriptStore as TranscriptStore
@@ -645,6 +702,7 @@ sequenceDiagram
     Agent->>Agent: 写 planner_result 与 planner trace
 
     alt action == workflow
+        Note over Agent,Workflow: ChatAgent 从 WorkflowRegistry 按 workflow_name 解析 Sequential/Conditional 等实现
         Agent->>Workflow: run(steps, executor, context)
         loop each step
             Workflow->>Executor: execute_step(step, context)
@@ -726,7 +784,7 @@ flowchart LR
    - store 抽象
 3. 看下一步最该补哪一层。
    当前最值得继续深化的通常是：
-   - workflow 抽象与扩展
+   - workflow 抽象与扩展（并行、循环、checkpoint、与注册表策略）
    - runtime / event / replay
    - store 查询与摘要能力
 
@@ -804,15 +862,17 @@ flowchart LR
 
 ## 7. 当前阶段的落地任务建议
 
+> 下列条目写于「runtime / store 主链尚未完全合入」时期；其中第 4～6 条及顺序工作流主链等**已在 §8 落地**。保留为「仍可持续打磨」的检查单，而不是未开始的空白项。
+
 结合现状，下一批最值得实现的小目标如下：
 
-1. 继续清理 `ChatAgent`、`Planner`、`Workflow` 之间的职责边界。
-2. 将 `Workflow` 与 `Executor` 更自然地接入更高层的 Agent 主流程。
+1. 继续清理 `ChatAgent`、`Planner`、`Workflow` 之间的职责边界（含注册表解析、条件分支与 trace 一致性）。
+2. 将 `Workflow` 与 `Executor` 更自然地接入更高层的 Agent 主流程（含失败策略、上下文传递约定）。
 3. 为工作流步骤执行、步骤结果传递补更稳的断言型测试。
-4. 引入最小 `RuntimeSession`，作为单轮运行快照对象记录输入、规划、调用轨迹与最终输出。
-5. 逐步将 `RuntimeSession` 演进为可序列化、可聚合的 runtime snapshot。
-6. 为后续 `TranscriptStore / SessionStore / Runtime` 预留接口。
-7. 逐步从“规则版规划 + 顺序执行”演进到更强的多步执行能力。
+4. ~~引入最小 `RuntimeSession`~~（已有）：继续丰富字段语义与序列化边界。
+5. 逐步将 `RuntimeSession` 演进为可序列化、可聚合的 runtime snapshot（与 `RuntimeSessionSnapshot` 对外协议对齐）。
+6. ~~为后续 `TranscriptStore / SessionStore` 预留接口~~（已接入）：转向查询、摘要与跨进程恢复等增强。
+7. 逐步从「规则版规划 + 顺序/条件工作流」演进到更强多步编排（并行、循环、人工节点）。
 8. 为后续 `Observability` 和多 Agent 协作继续预留接口。
 
 ## 8. 当前阶段状态
@@ -820,13 +880,13 @@ flowchart LR
 当前项目状态判断如下：
 
 1. 基础前后端工程与聊天交互闭环已经具备。
-2. `BaseAgent`、`BaseModel`、统一输入输出协议已经落地，并已接入真实模型。
-3. `BaseTool`、`ToolRegistry`、`ToolRouter` 与 `TimeTool` 已落地，规则版工具调用链路已跑通。
+2. `BaseAgent`、`BaseModel`、统一输入输出协议已经落地，并已接入真实模型。`BaseAgent.run()` 在校验失败时返回结构化 `AgentOutput`（`success=False`，`metadata.failure_kind=invalid_input`），便于 HTTP 与内部调用统一处理，而非抛 `ValueError`。
+3. `BaseTool`、`ToolRegistry`、`ToolRouter` 与示例工具 `TimeTool`、`WeatherTool` 已落地，规则版工具调用链路已跑通。
 4. `BaseMemory` 与 `InMemoryMemory` 已落地，短期会话记忆已经接入 `ChatAgent` 主流程。
 5. 普通聊天分支已经可以读取最近历史消息并拼接进模型输入，形成最小多轮上下文能力。
-6. `BasePlanner` 与 `RulePlanner` 已落地，`ToolRouter -> RulePlanner -> ChatAgent` 的最小规划执行链路已跑通。
-7. `BaseWorkflow`、`SequentialWorkflow`、`BaseExecutor` 与 `AgentExecutor` 已落地，最小工作流执行链路已跑通。
-8. Workflow 已支持最小的步骤结果传递能力，后一步可消费前一步输出。
+6. `BasePlanner` 与 `RulePlanner` 已落地，`ToolRouter -> RulePlanner -> ChatAgent` 的规划执行链路已跑通；`planner_result` 除 `tool` / `model` 外可下发 `action: workflow` 与 `workflow_name`。workflow 触发条件与关键词组可由 **`PLANNER_RULES_PATH`** 外置 JSON 配置（见 **§3.7**），步骤模板由 **`register_workflow_plan_builder`** 与 `workflow_name` 对齐扩展。
+7. `BaseWorkflow`、`SequentialWorkflow`（顺序执行、单步失败即结束并返回失败汇总）、`ConditionalWorkflow`（按步骤条件选择后继，便于失败兜底分支）、`WorkflowRegistry`（按名解析工作流实例）、`WorkflowResult`（统一工作流输出并写入 `RuntimeSession.workflow_result`）、`BaseExecutor` 与 `AgentExecutor` 已落地。
+8. Workflow 已支持步骤结果传递；顺序流在失败时短路返回，条件流可按 `condition` 跳过或执行不同模型/工具步骤。
 9. `RuntimeSession` 已落地，并接入 `ChatAgent`，可记录单轮输入、规划结果、`workflow_trace`、工具/模型调用、最终输出与错误摘要。
 10. `TranscriptEntry` 已落地，Transcript 记录已从约定 dict 收敛为明确的数据对象。
 11. `BaseTranscriptStore`、`InMemoryTranscriptStore` 已落地，`ChatAgent` 已可在每轮运行结束后追加统一结构的 `agent` 记录。
@@ -848,7 +908,7 @@ flowchart LR
 7. `RuntimeManager` 作为 runtime 协调层开始从 `ChatAgent` 中接管会话与 transcript 记录链。
 8. 为未来的 canonical runtime snapshot 设计预留空间。
 9. `ChatAgent`、`Planner`、`Workflow`、`Executor`、`RuntimeManager`、`SessionStore` 与 `TranscriptStore` 的职责边界持续收清。
-10. 为后续 Runtime、条件分支 Workflow、多步任务执行和多 Agent 能力打地基。
+10. 在已有条件分支 workflow 初版之上，继续为 Runtime 深化、循环/并行/人工节点、多步编排与多 Agent 能力打地基。
 
 补充说明：
 
@@ -879,7 +939,7 @@ flowchart LR
 1. `AgentFactory`
    职责：把 `ChatService` 中的依赖组装职责提出来，形成清晰的组装根。
 2. 查询能力
-   职责：让 `SessionStore / TranscriptStore` 从“会记录”变成“可读取”，优先补 `list_sessions()` 和 `get_transcript(session_id)`。
+   职责：让 `SessionStore / TranscriptStore` 从“会记录”变成“可读取”。已落地 `list_sessions()`、`SessionStore.get_session(session_id)`、`get_transcript(session_id)`，并由 `ChatService` / HTTP 暴露（见 **§11.1**）。
 3. 标准快照协议
    职责：让 `RuntimeSession / TranscriptEntry` 提供稳定、可序列化的对外结构。
 4. 持久化 Store
@@ -891,6 +951,7 @@ flowchart LR
    职责：把分散在 service/factory 中的环境变量读取逻辑统一收口到 `Settings`，形成清晰的配置入口。
 5. 可视化与调试能力
    职责：让 session、transcript、runtime snapshot 记录真正可被查看、分析与调试。
+   当前进展：除 JSON transcript 外，已提供 **最新一轮** `RuntimeSession` 的 **Markdown 导出** HTTP 接口（与 `runtime_session_to_markdown` 一致，见 **§11.1**）；根目录 `README.md` 的 API 说明已同步。
 
 这条顺序的核心原则是：
 
@@ -908,7 +969,7 @@ flowchart LR
 ```text
 route
   -> chat service
-  -> agent factory（下一步）
+  -> agent factory
   -> chat agent
   -> planner / workflow / executor
   -> runtime manager
@@ -920,7 +981,7 @@ route
 1. `route`
    职责：只负责 HTTP 请求校验、调用 service、返回统一响应。
 2. `ChatService`
-   职责：只负责业务调用、统一 `session_id`、对外暴露应用层接口。
+   职责：只负责业务调用、统一 `session_id`、对外暴露应用层接口（会话与 transcript 的只读查询、最新一轮 Markdown 导出等，路由见 **§11.1**）。
 3. `AgentFactory`
    职责：负责组装 `ChatAgent` 及其依赖，是应用层组装根，而不是 Agent 框架内核的一部分。
    当前进展：已支持根据配置在 `InMemory*Store` 与 SQLite 持久化 store 之间切换。
@@ -932,6 +993,25 @@ route
    职责：负责 runtime 记录链路协调，不直接承担 HTTP 或业务入口职责。
 
 后续如果继续扩展，不应让 `route` 和 `ChatService` 直接感知过多底层实现细节，而应继续通过组装根把依赖关系收口。
+
+### 11.1 HTTP 应用层只读与调试接口
+
+实现位置：`backend/app/routes/chat.py`，只读开关依赖：`backend/app/routes/deps.py` 中 **`require_read_api`**（读取 `Settings.agent_read_api_enabled`，对应环境变量 **`AGENT_READ_API_ENABLED`**，默认 **开启**）。关闭时上述 **GET** 返回 **403**（`FORBIDDEN`），**`POST /chat` 不经过该依赖**。启动时配置由 `main.lifespan` 注入 **`app.state.settings`**。
+
+URL 前缀由 `app.main` 挂载为 **`/agent_api`**。OpenAPI 与 Try it out：**`GET /docs`**（FastAPI Swagger UI）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/chat` | 单轮对话；可带请求头 **`X-Request-ID`**，响应头回显同一 ID。 |
+| GET | `/sessions` | 会话元信息列表。 |
+| GET | `/sessions/{session_id}` | 单条 session；不存在时 404。 |
+| GET | `/sessions/{session_id}/transcript` | transcript JSON（`TranscriptEntryResponse`，内含 `RuntimeSessionSnapshot`）。 |
+| GET | `/sessions/{session_id}/transcript/{entry_index}/markdown` | 按 **0-based** 下标导出某一 transcript 条目的 `RuntimeSession` Markdown；越界或无可导出时 404；下标为负时 422。 |
+| GET | `/sessions/{session_id}/transcript/latest/markdown` | **最新一条** transcript 对应轮次的 `RuntimeSession` Markdown（`text/markdown`），内核实现为 `runtime_session_to_markdown`；无记录时 404。 |
+
+规则规划外置配置、workflow 触发与扩展仍见 **§3.7**；环境变量总表见 `Settings.from_env` 与根目录 **`README.md`** 后端环境变量说明。
+
+根路径 **`GET /health`**（非 `/agent_api`）返回 `status`、`api_version`、`metrics_enabled`、`agent_read_api_enabled`，供存活探针与运维快速确认只读接口开关；**`api_version`** 与 FastAPI/OpenAPI 版本字段同源，见 **`backend/app/version.py`**（`API_VERSION`）。
 
 ## 12. LangChain 值得学习的地方
 
@@ -1048,7 +1128,7 @@ AI 协作角色定义为 **工程协作方**：以设计取舍说明、实现拆
 
 工程习惯上仍建议：核心模块先明确职责与接口目的；新增能力说明其在框架中的位置；重构时说明旧设计的局限与新方案解决的问题。
 
-## 11. 结语
+## 14. 结语
 
 这个项目不是简单封装一次模型调用，而是要逐步构建一个真正可扩展、可观测、可工程化的 Agent 框架。
 

@@ -210,7 +210,9 @@ control-plane / replay / monitor / UI
 
 ## 5. 当前我们最应该怎么演进
 
-结合当前项目状态，我建议按这个顺序走：
+> **与主仓同步（2026-04）**：下列「第一阶段～第三阶段」描述的是**推荐的演进顺序**；其中 **RuntimeSession 与 Workflow/Executor 深接**、**TranscriptStore / SessionStore**、**AgentFactory / 查询 API / 快照协议初版 / SQLite 持久化** 等，在主仓库 **`learnChainPros`** 中**已大体落地**。若与下文读起来像「待办」，以 `docs/agent-framework-design.md` **§8 当前阶段状态**为准。下文保留原文便于理解「为什么当时这样排期」。
+
+结合当前项目状态，我建议按这个顺序走（历史排期，多节已完成）：
 
 ## 第一阶段：收稳当前 `RuntimeSession`
 
@@ -246,7 +248,7 @@ control-plane / replay / monitor / UI
 
 ---
 
-## 7. 当前新增进展：planner / executor 解释性增强
+## 6. 当前新增进展：planner / executor 解释性增强
 
 最近这一轮我们已经把 runtime 记录链再往前推了一步：
 
@@ -260,7 +262,7 @@ control-plane / replay / monitor / UI
    - planner trace 会记录完整 `plan`
    - workflow step trace 会记录 step 级摘要
 
-## 8. 当前新增进展：前端调试视图分层
+## 7. 当前新增进展：前端调试视图分层
 
 在完成解释性 trace 主链之后，前端调试台也进入了新的分层阶段：
 
@@ -285,13 +287,27 @@ control-plane / replay / monitor / UI
 
 这一步的意义在于：
 
-## 我们现在的 runtime 不只是“能保存”，还开始“会解释”
+### 我们现在的 runtime 不只是“能保存”，还开始“会解释”
 
 这对后续前端调试台、持久化回放、失败分析都很关键。
 
+### 主仓进度补充说明
+
+截至当前阶段，`learnChainPros` 已经不只是“规划 + Workflow + RuntimeSession”：
+
+1. `RuntimeSession` 已能记录单轮输入、规划、`workflow_trace`、工具/模型调用与最终输出。
+2. `TranscriptEntry` 已落地，transcript 记录已从松散 dict 收敛为明确的数据对象。
+3. `TranscriptStore` 已接入 `ChatAgent` 主链，可按 `session_id` 追加统一结构的 `agent` 记录。
+4. `SessionStore` 已接入 `ChatAgent` 主链，可在 transcript 写入前确保 session 已存在。
+5. `RuntimeManager` 已开始统一协调 `RuntimeSession`、`TranscriptEntry`、`TranscriptStore` 与 `SessionStore`。
+
+这意味着我们当前正处于 **`RuntimeSession + Workflow/Executor + TranscriptStore/SessionStore` 的过渡阶段**：先把单轮快照扩展为多轮记录，再扩展为有 session 容器的运行记录系统；后面若继续演进到 canonical snapshot / runtime control-plane，会相对顺。
+
 ---
 
-## 6. 一个更直白的路线图
+## 9. 一个更直白的路线图
+
+> 下图描述从「单轮快照」到「控制平面」的**理想阶梯**；其中前几格主仓已跨过，见 §5 引用说明。
 
 ```text
 今天
@@ -317,38 +333,16 @@ control-plane / replay / monitor / UI
 
 ---
 
-## 7. 现在最重要的取舍
+## 10. 现在最重要的取舍
 
 这个对照文档最想帮我们守住的一件事是：
 
-## 不要因为看到了更成熟的 runtime/control-plane 设计，就跳过中间层
+### 不要因为看到了更成熟的 runtime/control-plane 设计，就跳过中间层
 
 也就是说：
 
 - 不要一上来就做大而全 `Runtime`
 - 不要跳过 `RuntimeSession -> TranscriptStore -> SessionStore` 这条中间演进路径
-
-## 8. 当前阶段补充说明
-
-截至当前阶段，`learnChainPros` 已经不只是“规划 + Workflow + RuntimeSession”：
-
-1. `RuntimeSession` 已能记录单轮输入、规划、`workflow_trace`、工具/模型调用与最终输出。
-2. `TranscriptEntry` 已落地，transcript 记录已从松散 dict 收敛为明确的数据对象。
-3. `TranscriptStore` 已接入 `ChatAgent` 主链，可按 `session_id` 追加统一结构的 `agent` 记录。
-4. `SessionStore` 已接入 `ChatAgent` 主链，可在 transcript 写入前确保 session 已存在。
-5. `RuntimeManager` 已开始统一协调 `RuntimeSession`、`TranscriptEntry`、`TranscriptStore` 与 `SessionStore`。
-
-这意味着我们当前正处于：
-
-## `RuntimeSession + Workflow/Executor + TranscriptStore/SessionStore` 的过渡阶段
-
-这一阶段的意义是：
-
-- 先把“单轮快照”
-- 扩展成“多轮记录”
-- 再扩展成“有 session 容器的运行记录系统”
-
-后面如果继续演进到 canonical snapshot / runtime control-plane，就会顺很多。
 - 不要一上来就做复杂 session schema
 - 不要一上来就做控制平面
 
@@ -359,23 +353,15 @@ control-plane / replay / monitor / UI
 3. 再考虑序列化与持久化
 4. 最后再上升到控制层
 
-这也是我们一路把：
-
-- Prompt
-- Planner
-- Workflow
-- Executor
-- RuntimeSession
-
-做顺的原因。
+这也是我们一路把 Prompt、Planner、Workflow、Executor、`RuntimeSession` 做顺的原因。
 
 ---
 
-## 8. 一句话总结
+## 11. 一句话总结
 
 `everything-claude-code` 给我们最大的启发不是“再加更多 skill”，而是：
 
-## Runtime 最终应该演进成：
+### Runtime 最终应该演进成：
 - 有内部运行对象
 - 有标准快照协议
 - 有 adapter
@@ -386,7 +372,7 @@ control-plane / replay / monitor / UI
 
 ---
 
-## 9. 后续路线
+## 12. 后续路线
 
 结合当前项目状态，后续推进不应再按“零散功能点”思考，而应按以下阶段稳定推进：
 
@@ -445,13 +431,13 @@ control-plane / replay / monitor / UI
 
 优先目标：
 
-1. 引入条件分支 workflow。
+1. **条件分支 workflow 初版已合入主链**（`ConditionalWorkflow` + `WorkflowRegistry` + 规则规划触发）；后续重点：**并行、循环、人工确认节点、checkpoint**，以及更强 **context / policy** 与 **多 Agent** 编排字段。
 2. 增强 workflow context 和步骤控制能力。
 3. 为多 agent orchestration 预留 role、route、policy 与 runtime 记录结构。
 
 ---
 
-## 10. 执行顺序建议
+## 13. 执行顺序建议
 
 如果只看最近的一段实现节奏，建议按下面顺序推进：
 
