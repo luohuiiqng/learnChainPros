@@ -20,6 +20,9 @@ class WorkflowPlanner(BasePlanner):
     def plan(self, input_data: Any, context: Any = None) -> dict[str, Any]:
         return {
             "action": "workflow",
+            "reason": "transcript test workflow",
+            "tool_name": None,
+            "workflow_name": "time_reply_workflow",
             "steps": [
                 {
                     "action": "tool",
@@ -38,7 +41,7 @@ class WorkflowPlanner(BasePlanner):
         }
 
 
-def assert_transcript_entry_shape(
+def _assert_transcript_entry_shape(
     entry: TranscriptEntry,
     expected_user_input: str,
     expected_output: str,
@@ -56,92 +59,96 @@ def assert_transcript_entry_shape(
     return runtime_session
 
 
-tool_registry = ToolRegistry()
-tool_registry.register_tool(TimeTool())
+def test_chat_agent_rule_planner_transcript_tool_then_model() -> None:
+    tool_registry = ToolRegistry()
+    tool_registry.register_tool(TimeTool())
+    transcript_store = InMemoryTranscriptStore()
+    session_store = InMemorySessionStore()
+    runtime_manager = RuntimeManager(
+        session_store=session_store,
+        transcript_store=transcript_store,
+    )
+    memory = InMemoryMemory()
+    model = MockModel(response_text="mock transcript response")
+    tool_router = ToolRouter()
+    tool_router.add_rule(
+        tool_name="time_tool",
+        keywords=["时间", "现在时间", "当前时间", "几点", "现在几点"],
+    )
+    rule_planner = RulePlanner(tool_router=tool_router)
+    rule_agent = ChatAgent(
+        runtime_manager=runtime_manager,
+        model=model,
+        tool_registry=tool_registry,
+        memory=memory,
+        planner=rule_planner,
+    )
 
-transcript_store = InMemoryTranscriptStore()
-session_store = InMemorySessionStore()
-runtime_manager = RuntimeManager(
-    session_store=session_store,
-    transcript_store=transcript_store,
-)
-memory = InMemoryMemory()
-model = MockModel(response_text="mock transcript response")
+    session_id = "pytest-transcript-rule-session"
+    tool_output = rule_agent.run(
+        AgentInput(message="现在几点了？", session_id=session_id)
+    )
+    model_output = rule_agent.run(AgentInput(message="你好", session_id=session_id))
 
-tool_router = ToolRouter()
-tool_router.add_rule(
-    tool_name="time_tool",
-    keywords=["时间", "现在时间", "当前时间", "几点", "现在几点"],
-)
-rule_planner = RulePlanner(tool_router=tool_router)
+    rule_entries = transcript_store.get_entries(session_id)
+    assert len(rule_entries) == 2
 
-rule_agent = ChatAgent(
-    runtime_manager=runtime_manager,
-    model=model,
-    tool_registry=tool_registry,
-    memory=memory,
-    planner=rule_planner,
-)
+    tool_entry_runtime = _assert_transcript_entry_shape(
+        rule_entries[0],
+        expected_user_input="现在几点了？",
+        expected_output=tool_output.content or "",
+    )
+    assert tool_entry_runtime.planner_result["action"] == "tool"
+    assert tool_entry_runtime.planner_result["tool_name"] == "time_tool"
+    assert len(tool_entry_runtime.tool_calls) == 1
+    assert tool_entry_runtime.model_calls == []
 
-session_id = "transcript-rule-session"
+    model_entry_runtime = _assert_transcript_entry_shape(
+        rule_entries[1],
+        expected_user_input="你好",
+        expected_output=model_output.content or "",
+    )
+    assert model_entry_runtime.planner_result["action"] == "model"
+    assert model_entry_runtime.planner_result.get("tool_name") is None
+    assert model_entry_runtime.tool_calls == []
+    assert len(model_entry_runtime.model_calls) == 1
 
-tool_output = rule_agent.run(AgentInput(message="现在几点了？", session_id=session_id))
-model_output = rule_agent.run(AgentInput(message="你好", session_id=session_id))
 
-rule_entries = transcript_store.get_entries(session_id)
-assert len(rule_entries) == 2
+def test_chat_agent_workflow_transcript_single_turn() -> None:
+    tool_registry = ToolRegistry()
+    tool_registry.register_tool(TimeTool())
+    workflow_transcript_store = InMemoryTranscriptStore()
+    workflow_session_store = InMemorySessionStore()
+    workflow_runtime_manager = RuntimeManager(
+        session_store=workflow_session_store,
+        transcript_store=workflow_transcript_store,
+    )
+    workflow_model = MockModel(response_text="mock workflow transcript response")
+    workflow_agent = ChatAgent(
+        runtime_manager=workflow_runtime_manager,
+        model=workflow_model,
+        tool_registry=tool_registry,
+        planner=WorkflowPlanner(),
+    )
 
-tool_entry_runtime = assert_transcript_entry_shape(
-    rule_entries[0],
-    expected_user_input="现在几点了？",
-    expected_output=tool_output.content or "",
-)
-assert tool_entry_runtime.planner_result == {"action": "tool", "tool_name": "time_tool"}
-assert len(tool_entry_runtime.tool_calls) == 1
-assert tool_entry_runtime.model_calls == []
+    workflow_session_id = "pytest-transcript-workflow-session"
+    workflow_output = workflow_agent.run(
+        AgentInput(message="现在几点了？", session_id=workflow_session_id)
+    )
 
-model_entry_runtime = assert_transcript_entry_shape(
-    rule_entries[1],
-    expected_user_input="你好",
-    expected_output=model_output.content or "",
-)
-assert model_entry_runtime.planner_result == {"action": "model"}
-assert model_entry_runtime.tool_calls == []
-assert len(model_entry_runtime.model_calls) == 1
+    workflow_entries = workflow_transcript_store.get_entries(workflow_session_id)
+    assert len(workflow_entries) == 1
 
-workflow_transcript_store = InMemoryTranscriptStore()
-workflow_session_store = InMemorySessionStore()
-workflow_runtime_manager = RuntimeManager(
-    session_store=workflow_session_store,
-    transcript_store=workflow_transcript_store,
-)
-workflow_model = MockModel(response_text="mock workflow transcript response")
-workflow_agent = ChatAgent(
-    runtime_manager=workflow_runtime_manager,
-    model=workflow_model,
-    tool_registry=tool_registry,
-    planner=WorkflowPlanner(),
-)
-
-workflow_session_id = "transcript-workflow-session"
-workflow_output = workflow_agent.run(
-    AgentInput(message="现在几点了？", session_id=workflow_session_id)
-)
-
-workflow_entries = workflow_transcript_store.get_entries(workflow_session_id)
-assert len(workflow_entries) == 1
-
-workflow_runtime = assert_transcript_entry_shape(
-    workflow_entries[0],
-    expected_user_input="现在几点了？",
-    expected_output=workflow_output.content or "",
-)
-assert workflow_runtime.planner_result["action"] == "workflow"
-assert len(workflow_runtime.workflow_trace) == 2
-assert workflow_runtime.workflow_trace[0]["action"] == "tool"
-assert workflow_runtime.workflow_trace[1]["action"] == "model"
-assert len(workflow_runtime.tool_calls) == 1
-assert len(workflow_runtime.model_calls) == 1
-assert workflow_runtime.model_calls[0]["prompt"]
-
-print("chat agent transcript store tests passed")
+    workflow_runtime = _assert_transcript_entry_shape(
+        workflow_entries[0],
+        expected_user_input="现在几点了？",
+        expected_output=workflow_output.content or "",
+    )
+    assert workflow_runtime.planner_result["action"] == "workflow"
+    assert len(workflow_runtime.workflow_trace) == 3
+    assert workflow_runtime.workflow_trace[0]["step_name"] == "planner"
+    assert workflow_runtime.workflow_trace[1]["action"] == "tool"
+    assert workflow_runtime.workflow_trace[2]["action"] == "model"
+    assert len(workflow_runtime.tool_calls) == 1
+    assert len(workflow_runtime.model_calls) == 1
+    assert workflow_runtime.model_calls[0]["prompt"]

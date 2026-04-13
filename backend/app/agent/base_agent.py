@@ -4,6 +4,7 @@ from typing import Any
 from app.models.base_model import BaseModel
 from app.schemas.agent_input import AgentInput
 from app.schemas.agent_output import AgentOutput
+from app.schemas.error_codes import ErrorCode
 
 class  BaseAgent(ABC):
     
@@ -44,7 +45,13 @@ class  BaseAgent(ABC):
         最后封装输出
         """
         if not self.validate_input(input_data):
-            raise ValueError(f"输入不合法:{input_data}")
+            return AgentOutput(
+                content="",
+                success=False,
+                error_message="输入不合法：message 为空或仅空白",
+                error_code=ErrorCode.INVALID_INPUT,
+                metadata={"failure_kind": "invalid_input"},
+            )
         return self.act(input_data)
     
     def reset(self)->None:

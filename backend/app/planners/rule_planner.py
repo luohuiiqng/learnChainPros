@@ -1,31 +1,58 @@
-from app.planners.base_planner import BasePlanner
+import logging
 from typing import Any
+
+from app.planners.base_planner import BasePlanner
+from app.planners.planner_rules_loader import (
+    PlannerTriggerSpec,
+    WorkflowTriggerRule,
+    load_planner_trigger_spec,
+    message_matches_trigger,
+)
+from app.planners.workflow_plan_builders import get_workflow_plan_builder
 from app.tools.tool_router import ToolRouter
 
+_log = logging.getLogger("app.planner.rule")
 
 
 class RulePlanner(BasePlanner):
-    def __init__(self,tool_router:ToolRouter=None,**kwargs)->None:
+    def __init__(
+        self,
+        tool_router: ToolRouter | None = None,
+        *,
+        trigger_spec: PlannerTriggerSpec | None = None,
+        rules_path: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._tool_router = tool_router
+        if trigger_spec is not None:
+            self._trigger_spec = trigger_spec
+        else:
+            self._trigger_spec = load_planner_trigger_spec(rules_path)
+        self._workflow_rules = self._build_resolved_workflow_rules(self._trigger_spec)
 
-    def _should_use_workflow(self, message: Any) -> bool:
-        """根据输入内容判断是否需要使用workflow进行规划，默认根据message内容是否包含特定关键词进行判断，可以在子类中重写实现更复杂的逻辑"""
-        rule_time_tool_str = ["时间", "几点", "现在几点", "当前时间"]
-        has_time_intent = False
-        for rule in rule_time_tool_str:
-            if rule in str(message):
-                has_time_intent = True
-                break
-        rule_workflow_str = ["回复", "说一句", "生成一句", "告诉我一句"]
-        has_workflow_intent = False
-        for rule in rule_workflow_str:
-            if rule in str(message):
-                has_workflow_intent = True
-                break
-        return has_time_intent and has_workflow_intent
+    @staticmethod
+    def _build_resolved_workflow_rules(
+        spec: PlannerTriggerSpec,
+    ) -> tuple[tuple[WorkflowTriggerRule, Any], ...]:
+        """仅保留已在 ``workflow_plan_builders`` 注册的规则；缺失名称打一次 WARNING。"""
+        resolved: list[tuple[WorkflowTriggerRule, Any]] = []
+        missing: set[str] = set()
+        for rule in spec.workflow_triggers:
+            try:
+                builder = get_workflow_plan_builder(rule.workflow_name)
+            except KeyError:
+                missing.add(rule.workflow_name)
+                continue
+            resolved.append((rule, builder))
+        if missing:
+            _log.warning(
+                "planner trigger rules skip workflow_name(s) with no registered plan builder: %s",
+                sorted(missing),
+            )
+        return tuple(resolved)
 
-    def plan(self,input_data:Any,context:Any=None)->dict[str,Any]:
+    def plan(self, input_data: Any, context: Any = None) -> dict[str, Any]:
         """根据输入内容生成最小规则计划结果。"""
         if not self.validate_input(input_data):
             return {
@@ -36,29 +63,15 @@ class RulePlanner(BasePlanner):
                 "steps": [],
                 "context": {},
             }
-        if self._should_use_workflow(input_data.message):
-            return {
-                "action": "workflow",
-                "reason": "同时命中时间意图和自然回复意图，选择workflow",
-                "tool_name": None,
-                "workflow_name": "time_reply_workflow",
-                "steps": [
-                    {
-                        "step_name": "get_time",
-                        "action": "tool",
-                        "tool_name": "time_tool",
-                        "tool_input": {},
-                    },
-                    {
-                        "step_name": "generate_reply",
-                        "action": "model",
-                        "prompt_template": "当前时间是{step_output},请生成一句自然回复给用户",
-                        "use_step_result": "get_time",
-                    },
-                ],
-                "context": {},
-            }
-        tool_name = self._tool_router.route(input_data.message) if self._tool_router else None
+        message = input_data.message
+        for rule, builder in self._workflow_rules:
+            if not message_matches_trigger(message, rule):
+                continue
+            return builder(input_data, reason=rule.reason)
+
+        tool_name = (
+            self._tool_router.route(input_data.message) if self._tool_router else None
+        )
         if tool_name is not None:
             return {
                 "action": "tool",

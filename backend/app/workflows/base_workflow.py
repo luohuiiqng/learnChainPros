@@ -1,16 +1,24 @@
 from abc import ABC,abstractmethod
 from typing import Any
+from app.workflows.workflow_result import WorkflowResult
+from app.workflows.base_executor import BaseExecutor
 
 
 
 class BaseWorkflow(ABC):
-    """"工作流的基础抽象类"""
-    def __init__(self,**kwargs)->None:
+    """工作流的基础抽象类。"""
+
+    def __init__(self, **kwargs) -> None:
         self._config = kwargs
 
     @abstractmethod
-    def run(self,steps:list[dict[str,Any]],executor:Any,context:Any=None)->dict[str,Any]:
-        """工作流的核心接口，输入输出都是字典格式，方便适配不同的场景和需求"""
+    def run(
+        self,
+        steps: list[dict[str, Any]],
+        executor: BaseExecutor,
+        context: dict[str, Any] | None = None,
+    ) -> WorkflowResult:
+        """工作流的核心接口，返回 WorkflowResult 标准结果对象"""
         raise NotImplementedError
     
     def get_workflow_info(self)->dict[str,Any]:

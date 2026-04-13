@@ -8,7 +8,11 @@ class BaseExecutor(ABC):
         self._config = kwargs
 
     @abstractmethod
-    def execute_step(self,step:Any,context:Any=None)->dict[str,Any]:
+    def execute_step(
+        self,
+        step: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         raise NotImplementedError
     
     def get_executor_info(self)->dict[str,Any]:
