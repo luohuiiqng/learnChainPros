@@ -1,5 +1,7 @@
 # `everything-claude-code` 与 `learnChainPros` Runtime 路线对照
 
+> **主线说明**：`learnChainPros` 主代码库当前为 **快速开发迭代**；本文档为与 `student/everything-claude-code` 的 runtime 路线对照，用于演进规划参考，与主仓库迭代交付节奏解耦。
+
 ## 1. 文档目的
 
 这份文档用于把我们当前的：

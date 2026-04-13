@@ -1,5 +1,7 @@
 # `student/claw-code-main` Agent/Harness 架构学习说明
 
+> **范围说明**：本文档仅针对 `student/claw-code-main` 参考树；`learnChainPros` 主工程当前为 **快速开发迭代** 主线，日常交付与接口约定以根目录 `README.md` 为准。
+
 ## 1. 文档目的
 
 本文档基于对 [`student/claw-code-main`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/claw-code-main) 本地代码的阅读整理而成，目标不是逐文件翻译，而是帮助后续学习时快速理解：

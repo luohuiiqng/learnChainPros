@@ -1,5 +1,7 @@
 # `student/everything-claude-code` 架构学习说明
 
+> **范围说明**：本文档仅针对 `student/everything-claude-code` 参考树；`learnChainPros` 主工程当前为 **快速开发迭代** 主线，与下文「学习/借鉴」语境解耦。
+
 ## 1. 文档目的
 
 本文档用于记录对 [`student/everything-claude-code`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/everything-claude-code) 的第一轮学习结论，重点回答：

@@ -6,6 +6,8 @@
 
 它不是某一个阶段的开发清单，而是整个自研 Agent 框架项目的总纲。后续所有模块设计、代码实现、阶段计划与重构决策，都应优先与本文档保持一致。
 
+**当前主线说明**：主仓库代码采用 **快速开发迭代** 策略——优先可合并的增量、可回归的测试、以及与本文件和根目录 `README.md` 的同步更新；**不等同于「学习分支」**。文中仍保留「先最小可用再增强」的工程方法，是指范围控制与里程碑拆分，而非以教学演示为首要目标。
+
 ## 2. 项目总目标
 
 我们的目标是从 0 开始实现一个完整的 Agent 框架。
@@ -85,7 +87,7 @@
 
 ### 3.5 面向生产演进
 
-即使前期是学习和实验性质，架构上也应预留工程化能力，包括：
+在快速迭代阶段同样如此：即使单周目标偏「先跑通」，架构上也应预留工程化能力，包括：
 
 1. 配置管理。
 2. 超时与重试机制。
@@ -288,6 +290,445 @@
 5. `RuntimeSession.workflow_trace` 现在既能承载 planner 级解释，也能承载 workflow step 级解释。
 
 这意味着我们已经从“有运行记录”进一步进入“运行记录可解释、可展示、可测试”的阶段。
+
+#### 当前代码结构图：模块分层、依赖与主链流转
+
+为了避免后续只凭印象理解框架，我们把当前 `backend/app` 的真实结构再压成三张图：
+
+1. 模块分层图
+2. 核心类依赖图
+3. 主请求流转图
+
+它们的作用不是追求“完美架构图”，而是帮助我们回答：
+
+1. 当前项目已经有哪些清晰分层。
+2. 每一层现在由哪些核心类承担职责。
+3. 一次真实请求从入口到运行时再到持久化，究竟怎么流动。
+
+##### 模块分层图
+
+```mermaid
+flowchart TB
+    subgraph API["API / Entry"]
+        main["main.py<br/>FastAPI app"]
+        route["routes/chat.py<br/>HTTP routes"]
+    end
+
+    subgraph Service["Application Service"]
+        chat_service["services/chat_service.py<br/>ChatService"]
+        factory["services/agent_factory.py<br/>AgentFactory"]
+        settings["config/settings.py<br/>Settings"]
+    end
+
+    subgraph AgentLayer["Agent Layer"]
+        base_agent["agent/base_agent.py<br/>BaseAgent"]
+        chat_agent["agent/chat_agent.py<br/>ChatAgent"]
+    end
+
+    subgraph PlannerLayer["Planner Layer"]
+        base_planner["planners/base_planner.py<br/>BasePlanner"]
+        rule_planner["planners/rule_planner.py<br/>RulePlanner"]
+    end
+
+    subgraph WorkflowLayer["Workflow Layer"]
+        base_workflow["workflows/base_workflow.py<br/>BaseWorkflow"]
+        seq_workflow["workflows/sequential_workflow.py<br/>SequentialWorkflow"]
+        base_executor["workflows/base_executor.py<br/>BaseExecutor"]
+        agent_executor["workflows/agent_executor.py<br/>AgentExecutor"]
+    end
+
+    subgraph RuntimeLayer["Runtime / Persistence"]
+        runtime_manager["runtime/runtime_manager.py<br/>RuntimeManager"]
+        runtime_session["runtime/runtime_session.py<br/>RuntimeSession"]
+        transcript_entry["runtime/transcript_entry.py<br/>TranscriptEntry"]
+
+        base_session_store["runtime/base_session_store.py<br/>BaseSessionStore"]
+        mem_session_store["runtime/in_memory_session_store.py<br/>InMemorySessionStore"]
+        sqlite_session_store["runtime/persistent_session_store.py<br/>PersistentSessionStore"]
+
+        base_transcript_store["runtime/base_transcript_store.py<br/>BaseTranscriptStore"]
+        mem_transcript_store["runtime/in_memory_transcript_store.py<br/>InMemoryTranscriptStore"]
+        sqlite_transcript_store["runtime/persistent_transcript_store.py<br/>PersistentTranscriptStore"]
+    end
+
+    subgraph ToolLayer["Tool Layer"]
+        base_tool["tools/base_tool.py<br/>BaseTool"]
+        time_tool["tools/time_tool.py<br/>TimeTool"]
+        tool_registry["tools/tool_registry.py<br/>ToolRegistry"]
+        tool_router["tools/tool_router.py<br/>ToolRouter"]
+    end
+
+    subgraph ModelLayer["Model Layer"]
+        base_model["models/base_model.py<br/>BaseModel"]
+        openai_model["models/openai_model.py<br/>OpenAIModel"]
+        mock_model["models/mock_model.py<br/>MockModel"]
+    end
+
+    subgraph MemoryPrompt["Memory / Prompt"]
+        base_memory["memory/base_memory.py<br/>BaseMemory"]
+        in_memory_memory["memory/in_memory_memory.py<br/>InMemoryMemory"]
+        base_prompt["prompts/base_prompt.py<br/>BasePrompt"]
+        prompt_builder["prompts/prompt_builder.py<br/>PromptBuilder"]
+    end
+
+    subgraph SchemaLayer["Schema / Contract"]
+        agent_input["schemas/agent_input.py<br/>AgentInput"]
+        agent_output["schemas/agent_output.py<br/>AgentOutput"]
+        chat_io["schemas/chat_input_output.py<br/>ChatRequest/ChatResponse"]
+        model_req["schemas/model_request.py<br/>ModelRequest"]
+        model_resp["schemas/model_response.py<br/>ModelResponse"]
+        tool_input["schemas/tool_input.py<br/>ToolInput"]
+        tool_output["schemas/tool_output.py<br/>ToolOutput"]
+        session_response["schemas/session_response.py<br/>SessionResponse"]
+        transcript_response["schemas/transcript_response.py<br/>TranscriptEntryResponse"]
+        runtime_snapshot["schemas/runtime_snapshot.py<br/>RuntimeSessionSnapshot"]
+    end
+
+    main --> route
+    route --> chat_service
+    chat_service --> settings
+    chat_service --> factory
+    factory --> chat_agent
+    factory --> openai_model
+    factory --> rule_planner
+    factory --> tool_registry
+    factory --> tool_router
+    factory --> time_tool
+    factory --> prompt_builder
+    factory --> in_memory_memory
+    factory --> runtime_manager
+    factory --> mem_session_store
+    factory --> sqlite_session_store
+    factory --> mem_transcript_store
+    factory --> sqlite_transcript_store
+```
+
+##### 核心类依赖图
+
+```mermaid
+classDiagram
+    class ChatService {
+      +chat(message, session_id)
+      +list_sessions()
+      +get_transcript(session_id)
+    }
+
+    class AgentFactory {
+      -_session_store
+      -_transcript_store
+      -_memory
+      -_prompt_builder
+      -_runtime_manager
+      +create_chat_agent(settings)
+      +get_session_store()
+      +get_transcript_store()
+    }
+
+    class BaseAgent {
+      <<abstract>>
+      +act(input_data)
+      +run(input_data)
+    }
+
+    class ChatAgent {
+      -_tool_registry
+      -_memory
+      -_prompt_builder
+      -_planner
+      -_runtime_manager
+      +act(input_data)
+      +call_tool(tool_name, tool_input)
+      +call_model(input_data)
+    }
+
+    class BasePlanner {
+      <<abstract>>
+      +plan(input_data, context)
+    }
+
+    class RulePlanner {
+      -_tool_router
+      +plan(input_data, context)
+      -_should_use_workflow(message)
+    }
+
+    class BaseWorkflow {
+      <<abstract>>
+      +run(steps, executor, context)
+    }
+
+    class SequentialWorkflow {
+      +run(steps, executor, context)
+    }
+
+    class BaseExecutor {
+      <<abstract>>
+      +execute_step(step, context)
+    }
+
+    class AgentExecutor {
+      -_model
+      -_tool_registry
+      +execute_step(step, context)
+      -_build_step_result(...)
+    }
+
+    class RuntimeManager {
+      -_session_store
+      -_transcript_store
+      +create_runtime_session(session_id, user_input)
+      +ensure_session_exists(session_id)
+      +build_transcript_entry(...)
+      +append_transcript_entry(...)
+    }
+
+    class RuntimeSession {
+      +session_id
+      +user_input
+      +planner_result
+      +workflow_result
+      +tool_calls
+      +model_calls
+      +workflow_trace
+      +final_output
+      +errors
+      +add_tool_call(...)
+      +add_model_call(...)
+      +add_workflow_step_trace(...)
+      +to_dict()
+    }
+
+    class TranscriptEntry {
+      +type
+      +user_input
+      +final_output
+      +success
+      +timestamp
+      +runtime_session
+      +to_dict()
+    }
+
+    class BaseSessionStore {
+      <<abstract>>
+      +create_session(...)
+      +get_session(...)
+      +list_sessions()
+    }
+
+    class InMemorySessionStore
+    class PersistentSessionStore
+
+    class BaseTranscriptStore {
+      <<abstract>>
+      +append_entry(...)
+      +get_entries(...)
+      +clear(...)
+    }
+
+    class InMemoryTranscriptStore
+    class PersistentTranscriptStore
+
+    class BaseModel {
+      <<abstract>>
+      +generate(input_data)
+    }
+
+    class OpenAIModel
+    class MockModel
+
+    class BaseMemory {
+      <<abstract>>
+      +add_message(...)
+      +get_messages(...)
+      +clear(...)
+    }
+
+    class InMemoryMemory
+
+    class BasePrompt {
+      <<abstract>>
+      +build_prompt(...)
+    }
+
+    class PromptBuilder
+
+    class ToolRegistry {
+      +register_tool(tool)
+      +get_tool(name)
+    }
+
+    class ToolRouter {
+      +route(input_text)
+      +add_rule(tool_name, keywords)
+    }
+
+    class BaseTool {
+      <<abstract>>
+      +run(tool_input)
+      +execute(tool_input)
+    }
+
+    class TimeTool
+
+    ChatService --> AgentFactory
+    AgentFactory --> ChatAgent
+    AgentFactory --> RuntimeManager
+    AgentFactory --> OpenAIModel
+    AgentFactory --> RulePlanner
+    AgentFactory --> ToolRegistry
+    AgentFactory --> ToolRouter
+    AgentFactory --> PromptBuilder
+    AgentFactory --> InMemoryMemory
+    AgentFactory --> InMemorySessionStore
+    AgentFactory --> PersistentSessionStore
+    AgentFactory --> InMemoryTranscriptStore
+    AgentFactory --> PersistentTranscriptStore
+
+    ChatAgent --|> BaseAgent
+    RulePlanner --|> BasePlanner
+    SequentialWorkflow --|> BaseWorkflow
+    AgentExecutor --|> BaseExecutor
+    OpenAIModel --|> BaseModel
+    MockModel --|> BaseModel
+    InMemoryMemory --|> BaseMemory
+    PromptBuilder --|> BasePrompt
+    TimeTool --|> BaseTool
+    InMemorySessionStore --|> BaseSessionStore
+    PersistentSessionStore --|> BaseSessionStore
+    InMemoryTranscriptStore --|> BaseTranscriptStore
+    PersistentTranscriptStore --|> BaseTranscriptStore
+
+    ChatAgent --> BasePlanner
+    ChatAgent --> PromptBuilder
+    ChatAgent --> BaseMemory
+    ChatAgent --> ToolRegistry
+    ChatAgent --> RuntimeManager
+    ChatAgent --> SequentialWorkflow
+    ChatAgent --> AgentExecutor
+    ChatAgent --> RuntimeSession
+
+    RulePlanner --> ToolRouter
+    AgentExecutor --> BaseModel
+    AgentExecutor --> ToolRegistry
+    RuntimeManager --> BaseSessionStore
+    RuntimeManager --> BaseTranscriptStore
+    RuntimeManager --> RuntimeSession
+    RuntimeManager --> TranscriptEntry
+    ToolRegistry --> BaseTool
+```
+
+##### 主请求流转图
+
+```mermaid
+sequenceDiagram
+    participant FE as Frontend
+    participant Route as routes/chat.py
+    participant Service as ChatService
+    participant Agent as ChatAgent
+    participant Planner as RulePlanner
+    participant Workflow as SequentialWorkflow
+    participant Executor as AgentExecutor
+    participant Model as OpenAIModel
+    participant Tools as ToolRegistry/TimeTool
+    participant Runtime as RuntimeManager
+    participant SessionStore as SessionStore
+    participant TranscriptStore as TranscriptStore
+
+    FE->>Route: POST /agent_api/chat
+    Route->>Service: chat(message, session_id)
+    Service->>Agent: run(AgentInput)
+    Agent->>Runtime: create_runtime_session(session_id, user_input)
+
+    Agent->>Planner: plan(input_data)
+    Planner-->>Agent: planner_result
+
+    Agent->>Agent: 写 planner_result 与 planner trace
+
+    alt action == workflow
+        Agent->>Workflow: run(steps, executor, context)
+        loop each step
+            Workflow->>Executor: execute_step(step, context)
+            alt step.action == tool
+                Executor->>Tools: get_tool(tool_name)
+                Tools-->>Executor: tool
+                Executor->>Tools: tool.run(ToolInput)
+                Tools-->>Executor: ToolOutput
+            else step.action == model
+                Executor->>Model: generate(ModelRequest)
+                Model-->>Executor: ModelResponse
+            end
+            Executor-->>Workflow: step_result
+        end
+        Workflow-->>Agent: workflow_result
+        Agent->>Agent: 写 workflow_result / tool_calls / model_calls / workflow_trace
+    else action == tool
+        Agent->>Tools: get_tool(tool_name)
+        Tools-->>Agent: tool
+        Agent->>Tools: tool.run(ToolInput)
+        Tools-->>Agent: ToolOutput
+        Agent->>Agent: runtime_session.add_tool_call(...)
+    else action == model
+        Agent->>Model: generate(ModelRequest)
+        Model-->>Agent: ModelResponse
+        Agent->>Agent: runtime_session.add_model_call(...)
+    end
+
+    Agent->>Runtime: ensure_session_exists(session_id)
+    Runtime->>SessionStore: get_session(session_id)
+    alt session not exists
+        Runtime->>SessionStore: create_session(session_id, metadata={})
+    end
+
+    Agent->>Runtime: build_transcript_entry(...)
+    Runtime-->>Agent: TranscriptEntry
+    Agent->>Runtime: append_transcript_entry(session_id, entry)
+    Runtime->>TranscriptStore: append_entry(session_id, entry)
+
+    Agent-->>Service: AgentOutput
+    Service-->>Route: AgentOutput + session_id
+    Route-->>FE: ChatResponse
+```
+
+##### 查询链流转图
+
+```mermaid
+flowchart LR
+    FE["Frontend Debug UI"] -->|GET /agent_api/sessions| RouteSessions["routes/chat.py:list_sessions"]
+    RouteSessions --> ChatService["ChatService.list_sessions()"]
+    ChatService --> SessionStore["SessionStore.list_sessions()"]
+    SessionStore --> ChatService
+    ChatService --> SessionResponse["SessionResponse"]
+    SessionResponse --> FE
+
+    FE -->|GET /agent_api/sessions/:id/transcript| RouteTranscript["routes/chat.py:get_session_transcript"]
+    RouteTranscript --> ChatService2["ChatService.get_transcript(session_id)"]
+    ChatService2 --> TranscriptStore["TranscriptStore.get_entries(session_id)"]
+    TranscriptStore --> TranscriptEntry["TranscriptEntry"]
+    TranscriptEntry --> TranscriptResponse["TranscriptEntryResponse.from_transcript_entry(...)"]
+    TranscriptResponse --> RuntimeSnapshot["RuntimeSessionSnapshot.from_runtime_session(...)"]
+    RuntimeSnapshot --> FE
+```
+
+##### 如何使用这组图
+
+如果后面要继续完善框架本身，这组图最适合拿来做三件事：
+
+1. 看依赖是否开始穿层。
+   例如 route 是否开始直接碰 runtime，或者 workflow 是否开始直接操作 store。
+2. 看抽象是否已经落地。
+   例如我们现在已经有：
+   - `BaseAgent`
+   - `BasePlanner`
+   - `BaseWorkflow`
+   - `BaseExecutor`
+   - `BaseMemory`
+   - `BaseModel`
+   - store 抽象
+3. 看下一步最该补哪一层。
+   当前最值得继续深化的通常是：
+   - workflow 抽象与扩展
+   - runtime / event / replay
+   - store 查询与摘要能力
 
 ### 阶段 6：Workflow 编排能力
 
@@ -591,52 +1032,24 @@ route
 
 这四点会直接决定我们后续 workflow、runtime、orchestration 是否能继续健康演进。
 
-## 13. 协作方式与成长目标
+## 13. 快速迭代协作约定（当前主线）
 
-在本项目的实现过程中，AI 助手不仅承担协作开发者的角色，也承担导师角色。
+主仓库处于 **快速开发迭代** 阶段：以可合并的增量、端到端可验证的行为、以及文档同步为默认标准，**不以「学习分支」或教案式推进为首要目标**。
 
-同时，AI 助手也承担长期协作伙伴的角色，不只是给出建议和结论，还要陪伴开发者持续推进项目、拆解困难问题、在实现过程中共同成长。
+协作约定：
 
-协作目标分为两个层面：
+1. **交付优先**：在尊重分层与接口边界的前提下，优先打通可演示、可回归的闭环。
+2. **文档同步**：影响对外 API、配置、主链路或部署方式的改动，应同步更新根目录 `README.md` 与本设计文档中的对应小节。
+3. **兼容与迁移**：涉及 schema、存储格式或路由的变更，在 PR / 提交说明中写清兼容策略或迁移步骤。
+4. **默认可观测**：新能力尽量接入现有 `RuntimeSession`、日志或同类观测通路，便于迭代期定位问题。
+5. **测试护栏**：关键路径优先用自动化测试锁住行为，减少仅靠手工点按的回归。
 
-1. 工程目标。
-   与开发者共同完成自研 Agent 框架的设计、实现、重构与演进。
-2. 成长目标。
-   帮助开发者逐步掌握 Agent 框架设计方法、核心模块抽象能力、工程实现能力与系统级思维，最终成长为能够独立设计和实现复杂 Agent 系统的高级开发者。
+AI 协作角色定义为 **工程协作方**：以设计取舍说明、实现拆解与评审式反馈为主；知识讲解服务于交付质量与可维护性，而非单独作为项目节奏的主线目标。
 
-因此，在本项目中，AI 助手的协作身份统一定义为：
-
-1. 老师。
-   负责讲清楚设计原理、接口边界、工程取舍与演进逻辑。
-2. 好伙伴。
-   负责和开发者一起推进实现，提供支持、反馈、陪伴与共同解决问题的协作体验。
-
-后续协作默认遵循以下原则：
-
-1. 不只给出结论，也解释设计原因与取舍。
-2. 不只完成代码，也帮助理解抽象边界、模块职责与演进路径。
-3. 不只关注“能跑”，也强调“可维护、可扩展、可工程化”。
-4. 在阶段推进中主动指出关键知识点、常见误区与更优实践。
-5. 尽量把每一次实现都转化为一次系统化学习机会。
-6. 保持轻松、友好、适度幽默的交流风格，让学习和实现过程更自然、更有陪伴感。
-
-这意味着后续开发中，应尽量做到：
-
-1. 每个核心模块在编码前先明确职责。
-2. 每个重要接口在实现前先说明设计目的。
-3. 每次新增能力时，同时说明它在整个框架中的位置。
-4. 每次重构时，说明为什么旧设计不足、新设计解决了什么问题。
-
-在沟通风格上，默认采用以下约定：
-
-1. 技术表达保持准确，不为了幽默牺牲严谨性。
-2. 对话风格尽量轻松、风趣、自然，避免过度严肃和说教感。
-3. 在指出问题时保持鼓励式反馈，帮助开发者建立长期信心与节奏。
-
-最终目标不是只完成一个可运行项目，而是让开发者具备独立构建高质量 Agent 框架与复杂智能体系统的能力。
+工程习惯上仍建议：核心模块先明确职责与接口目的；新增能力说明其在框架中的位置；重构时说明旧设计的局限与新方案解决的问题。
 
 ## 11. 结语
 
 这个项目不是简单封装一次模型调用，而是要逐步构建一个真正可扩展、可观测、可工程化的 Agent 框架。
 
-因此我们后续的每一步实现，都要服务于这个长期目标：从一个最小可运行 Agent 出发，逐步演进到完整的智能体系统框架。
+因此我们后续的每一步实现，都要服务于这个长期目标：在快速迭代中持续演进为完整、可工程化的智能体系统框架。

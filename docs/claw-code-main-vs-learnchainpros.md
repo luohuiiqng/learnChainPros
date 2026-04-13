@@ -1,5 +1,7 @@
 # `claw-code-main` 与 `learnChainPros` 模块对照表
 
+> **主线说明**：`learnChainPros` 主代码库当前为 **快速开发迭代** 节奏；本文档用于与 `student/claw-code-main` 的模块级对照与借鉴，阅读语境偏参考归档，不等同于主仓库的日常开发清单。
+
 ## 1. 文档目的
 
 这份文档用于把 [`student/claw-code-main`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros/student/claw-code-main) 与我们当前的 [`learnChainPros`](/Users/hqluo/Dev/AgentWorkSpace/learnChainPros) 做一个“模块级对照”。
