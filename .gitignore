@@ -26,6 +26,7 @@ __pycache__/
 *.pyd
 *.so
 .pytest_cache/
+pytestdebug.log
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -37,6 +38,8 @@ venv/
 # Backend build artifacts
 backend/.venv/
 backend/venv/
+# 本地 SQLite / 运行时数据（默认路径，勿提交）
+backend/backend/
 
 # Node / Frontend
 node_modules/
